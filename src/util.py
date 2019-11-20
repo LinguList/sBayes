@@ -7,12 +7,15 @@ import numpy as np
 import scipy.spatial as spatial
 import scipy.stats as stats
 from scipy.sparse import csr_matrix
-from math import sqrt
+from math import sqrt, floor, ceil
 import datetime
 import csv
 import os
 import random
 from scipy.misc import logsumexp
+import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
+
 
 EPS = np.finfo(float).eps
 
@@ -590,3 +593,136 @@ def add_edge(edges, edge_nodes, coords, i, j):
 
     edges.add((i, j))
     edge_nodes.append(coords[[i, j]])
+
+
+def samples2res(samples):
+    """
+    Stores the output of the MCMC contained in samples in a simple data container (dict).
+    The returned data container facilitates the analysis of the results (e.g. plotting).
+    Args:
+        samples (list): samples
+    """
+
+    n_zones = samples['sample_zones'][0].shape[0]
+
+    # Define output format for estimated samples
+    mcmc_res = {
+        'lh': [],
+        'prior': [],
+        'recall': [],
+        'precision': [],
+        'posterior': [],
+        'zones': [[] for _ in range(n_zones)],
+        'weights': [],
+        'p_global': [],
+        'p_zones': [[] for _ in range(n_zones)],
+        'true_zones': [],
+        'n_zones': n_zones,
+    }
+
+    # Collect true sample
+    true_z = np.any(samples['true_zones'], axis=0)
+    mcmc_res['true_zones'].append(true_z)
+    mcmc_res['true_weights'] = samples['true_weights']
+    mcmc_res['true_p_global'] = samples['true_p_global']
+    mcmc_res['true_p_zones'] = samples['true_p_zones']
+
+    mcmc_res['true_lh'] = samples['true_ll']
+    true_posterior = samples['true_ll'] + samples['true_prior']
+    mcmc_res['true_posterior'] = true_posterior
+
+    for t in range(len(samples['sample_zones'])):
+
+        # Zones and p_zones
+        for z in range(n_zones):
+            mcmc_res['zones'][z].append(samples['sample_zones'][t][z])
+            # mcmc_res['p_zones'][z].append(transform_p_from_log(samples['sample_p_zones'][t])[z])
+
+        # Weights
+        mcmc_res['weights'].append(transform_weights_from_log(samples['sample_weights'][t]))
+
+        # Likelihood, prior and posterior
+        mcmc_res['lh'].append(samples['sample_likelihood'][t])
+        mcmc_res['prior'].append(samples['sample_prior'][t])
+
+        posterior = samples['sample_likelihood'][t] + samples['sample_prior'][t]
+        mcmc_res['posterior'].append(posterior)
+
+        # Recall and precision
+        sample_z = samples['sample_zones'][t][0]
+        n_true = np.sum(true_z)
+
+        intersections = np.minimum(sample_z, true_z)
+        total_recall = np.sum(intersections, axis=0) / n_true
+        mcmc_res['recall'].append(total_recall)
+
+        precision = np.sum(intersections, axis=0) / np.sum(sample_z, axis=0)
+        mcmc_res['precision'].append(precision)
+    np.set_printoptions(suppress=True)
+
+    return mcmc_res
+
+
+
+def round_int(n, mode='up'):
+    """
+    Function to round an integer for the calculation of axes limits.
+    For example:
+    up: 113 -> 120, 3456 -> 3500
+    down: 113 -> 110, 3456 -> 3450
+
+    Args:
+         n (int): integer number to round
+         mode (str): round 'up' or 'down'
+    """
+
+    n = int(n) if isinstance(n, float) else n
+    n_digits = len(str(n)) if n > 0 else len(str(n)) - 1
+    convertor = 10 ** (n_digits - 2)
+
+    if mode == 'up':
+        return ceil(n / convertor) * convertor
+    elif mode == 'down':
+        return floor(n / convertor) * convertor
+    else:
+        raise Exception(f'Unknown mode: "{mode}". Use either "up" or "down".')
+
+
+
+
+def colorline(x, y, z=None, cmap=plt.get_cmap('copper'), norm=plt.Normalize(0.0, 1.0), linewidth=3, alpha=1.0):
+    """
+    Plot a colored line with coordinates x and y
+    Optionally specify colors in the array z
+    Optionally specify a colormap, a norm function and a line width
+    from: https://nbviewer.jupyter.org/github/dpsanders/matplotlib-examples/blob/master/colorline.ipynb
+    """
+
+    # Default colors equally spaced on [0,1]:
+    if z is None:
+        z = np.linspace(0.0, 1.0, len(x))
+
+    # Special case if a single number:
+    if not hasattr(z, "__iter__"):  # to check for numerical input -- this is a hack
+        z = np.array([z])
+
+    z = np.asarray(z)
+
+    def make_segments(x, y):
+        """
+        Create list of line segments from x and y coordinates, in the correct format for LineCollection:
+        an array of the form   numlines x (points per line) x 2 (x and y) array
+        """
+
+        points = np.array([x, y]).T.reshape(-1, 1, 2)
+        segments = np.concatenate([points[:-1], points[1:]], axis=1)
+
+        return segments
+
+    segments = make_segments(x, y)
+    lc = LineCollection(segments, array=z, cmap=cmap, norm=norm, linewidth=linewidth, alpha=alpha)
+
+    ax = plt.gca()
+    ax.add_collection(lc)
+
+    return lc

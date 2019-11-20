@@ -3,6 +3,7 @@
 from __future__ import absolute_import, division, print_function, \
     unicode_literals
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 # import seaborn as sns
 plt.style.use('seaborn-paper')
@@ -11,11 +12,13 @@ plt.tight_layout()
 import numpy as np
 import math
 
-from src.util import zones_autosimilarity, add_edge, compute_delaunay
-from src.util import bounding_box
+from src.util import zones_autosimilarity, add_edge, compute_delaunay, colorline
+from src.util import bounding_box, round_int
 from scipy.stats import gamma, linregress
 from scipy.spatial import Delaunay
+from scipy.sparse.csgraph import minimum_spanning_tree
 from matplotlib.collections import LineCollection
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from shapely.ops import cascaded_union, polygonize
 from shapely import geometry
 from descartes import PolygonPatch
@@ -268,10 +271,149 @@ def plot_zones(zones, net, ax=None):
 #     plt.show()
 
 
-def plot_posterior_frequency(mcmc_res, net, nz=-1, burn_in=0.2, plot_family=None, family_alpha_shape=None,
-                             family_color = None, bg_map=False, proj4=None, geojson_map=None,
+def plot_posterior_frequency(mcmc_res, net, nz=-1, burn_in=0.2, show_zone_bbox=False, ts_posterior_freq=0.8,
+                             size=20, cmap=plt.cm.get_cmap('jet'), fname='posterior_frequency'):
+    """ This function creates a scatter plot of all sites in the posterior distribution. The color of a site reflects
+    its frequency in the posterior
+
+    Args:
+        mcmc_res (dict): the output from the MCMC neatly collected in a dict
+        net (dict): The full network containing all sites.
+        nz (int): For multiple zones: which zone should be plotted? If -1, plot all.
+        burn_in (float): Percentage of first samples which is discarded as burn-in
+        show_zone_bbox (boolean): Adds box(es) with annotation to zone(s)
+        ts_posterior_freq (float): If zones are annotated this threshold
+        size (int): size of points
+        cmap (matplotlib.cm): colormap for posterior frequency of points
+        fname (str): a path followed by a the name of the file
+    """
+
+
+    fontsize = 24
+    frame_width = 1.5
+
+    fig, ax = plt.subplots(figsize=(15, 10))
+
+    zones = mcmc_res['zones']
+    n_zones = len(zones)
+
+    # getting positions of points
+    locations = net['locations']
+    positions = net['locations'].T
+
+
+    # plot all zones
+    if nz == -1:
+        # get samples from all zones
+        n_samples = len(zones[0])
+        zones_reformatted = [sum(k) for k in zip(*zones)]
+
+        # exclude burn-in
+        end_bi = math.ceil(len(zones_reformatted) * burn_in)
+        density = (np.sum(zones_reformatted[end_bi:], axis=0, dtype=np.int32) / (n_samples - end_bi))
+
+    # plot only one zone (passed as argument)
+    else:
+        # get samples of the zone
+        zone = zones[nz-1]
+        n_samples = len(zone)
+
+        # exclude burn-in
+        end_bi = math.ceil(n_samples * burn_in)
+
+        # compute frequency of each point in that zone
+        density = (np.sum(zone[end_bi:], axis=0, dtype=np.int32) / (n_samples - end_bi))
+
+
+    # sorting points according to their frequency in the posterior
+    # -> high frequency points are plotted over low frequency points
+    positions_sorted = [[c for _, c in sorted(zip(density, coords), key=lambda pair: pair[0])] for coords in positions]
+    density_sorted = sorted(density)
+    density_sorted = list(map(lambda x: x * 100, density_sorted))
+
+    # adding scatter plot to axes
+    ax.scatter(*positions_sorted, c=density_sorted, s=size, cmap=cmap, alpha=0.6, linewidths=0)
+
+    if show_zone_bbox:
+        # create list with all zone indices
+        indices_zones = [nz-1] if nz != -1 else range(n_zones)
+        print(f'Zone indices: {indices_zones}')
+
+        for zone_index in indices_zones:
+            # get samples of the zone
+            zone = zones[zone_index]
+            n_samples = len(zone)
+
+            # exclude burn-in
+            end_bi = math.ceil(n_samples * burn_in)
+
+            # compute frequency of each point in that zone
+            posterior_freq = (np.sum(zone[end_bi:], axis=0, dtype=np.int32) / (n_samples - end_bi))
+            is_contact_point = posterior_freq > ts_posterior_freq
+            cp_locations = locations[is_contact_point]
+            print(cp_locations.shape)
+            zone_bbox = bounding_box(cp_locations)
+            print(zone_bbox)
+            bbox_ll = (round_int(zone_bbox['x_min'], 'down'), round_int(zone_bbox['y_min'], 'down'))
+            bbox_height = round_int(zone_bbox['y_max'], 'up') - round_int(zone_bbox['y_min'], 'down')
+            bbox_width = round_int(zone_bbox['x_max'], 'up') - round_int(zone_bbox['x_min'], 'down')
+            bbox = mpl.patches.Rectangle(bbox_ll, bbox_width, bbox_height, fill=False, edgecolor='k',
+                                         lw=1)
+
+            ax.add_patch(bbox)
+
+
+
+    # getting axes ranges and rounding them
+    x_min, x_max = np.min(positions[0,:]), np.max(positions[0,:])
+    y_min, y_max = np.min(positions[1,:]), np.max(positions[1,:])
+    x_min, x_max = round_int(x_min, 'down'), round_int(x_max, 'up')
+    y_min, y_max = round_int(y_min, 'down'), round_int(y_max, 'up')
+
+    # print(f'x range {x_min}--{x_max}')
+    # print(f'y range {y_min}--{y_max}')
+
+    # x axis
+    ax.set_xlim([x_min, x_max])
+    x_ticks = list(np.linspace(x_min, x_max, 6))
+    ax.set_xticks(x_ticks)
+    ax.set_xticklabels([f'{x_tick:.0f}' for x_tick in x_ticks], fontsize=fontsize)
+
+    # y axis
+    ax.set_ylim([y_min, y_max])
+    y_ticks = list(np.linspace(y_min, y_max, 6))
+    ax.set_yticks(y_ticks)
+    ax.set_yticklabels([f'{y_tick:.0f}' for y_tick in y_ticks], fontsize=fontsize)
+
+
+    [ax.spines[side].set_linewidth(frame_width) for side in ['left', 'bottom', 'right', 'top']]
+    plt.rcParams["axes.linewidth"] = frame_width
+
+    # colorbar
+    cbar_ticks = list(np.linspace(0, 1, 6))
+    cbar_ticklabels = [f'{round(t * 100, 0):.0f}' for t in cbar_ticks]
+
+    divider = make_axes_locatable(ax)
+    cax = divider.new_vertical(size="3%", pad=1, pack_start=True)
+    fig.add_axes(cax)
+    cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=mpl.colors.Normalize(vmin=0, vmax=1),
+                                     orientation='horizontal', ticks=cbar_ticks)
+    cbar.ax.set_xlabel('Frequency of point in posterior (%)', fontsize=fontsize, labelpad=-75)
+    cbar.ax.set_xticklabels(cbar_ticklabels)
+    cbar.ax.tick_params(labelsize=fontsize)
+
+    # ax.set_title(title, fontsize=fontsize)
+
+
+    fig.savefig(fname, bbox_inches='tight', dpi=400)
+    # plt.show()
+
+
+def plot_posterior_frequency_map(mcmc_res, net, nz=-1, burn_in=0.2, plot_family=None, family_alpha_shape=None,
+                             family_color=None, bg_map=False, proj4=None, geojson_map=None,
                              geo_json_river=None, offset_factor=0.03, plot_edges=False,
-                             labels=False, labels_offset=None):
+                             labels=False, labels_offset=None, size=20, cmap=plt.cm.get_cmap('jet'),
+                             annotate_zones=False, fname='posterior_frequency'):
     """ This function creates a scatter plot of all sites in the posterior distribution. The color of a site reflects
     its frequency in the posterior
 
@@ -291,13 +433,21 @@ def plot_posterior_frequency(mcmc_res, net, nz=-1, burn_in=0.2, plot_family=None
         plot_edges (bool): Plot the edges of the mst triangulation for the zone?
         labels (bool): Plot the labels of the families?
         labels_offset (float, float): Offset of the labels in both x and y
+        size (int): size of the points
+        fname (str): a path followed by a the name of the file
     """
-    zones = mcmc_res['zones']
 
-    fig, ax = plt.subplots(figsize=(20, 40))
-    all_sites = net['locations']
+    fontsize = 24
+    frame_width = 1.5
+
+    fig, ax = plt.subplots(figsize=(15, 10))
+
+    zones = mcmc_res['zones']
+    n_zones = len(zones)
+
+    # getting positions and name of points
+    positions = net['locations'].T
     names = net['names']
-    size = 10
 
     # Find index of first sample after burn-in
     if bg_map:
@@ -313,31 +463,39 @@ def plot_posterior_frequency(mcmc_res, net, nz=-1, burn_in=0.2, plot_family=None
             rivers = gpd.read_file(geo_json_river)
             rivers = rivers.to_crs(proj4)
             rivers.plot(ax=ax, color=None, edgecolor="skyblue")
-    if nz != -1:
-        nz += -1
 
+    # plot all zones
     if nz == -1:
-        n = len(zones[0])
+        # get samples from all zones
+        n_samples = len(zones[0])
         zones = [sum(k) for k in zip(*zones)]
 
-        # Exclude burn-in
+        # exclude burn-in
         end_bi = math.ceil(len(zones) * burn_in)
-        density = (np.sum(zones[end_bi:], axis=0, dtype=np.int32) / (n - end_bi))
+        density = (np.sum(zones[end_bi:], axis=0, dtype=np.int32) / (n_samples - end_bi))
 
+    # plot only one zone (passed as argument)
     else:
-        zone = zones[nz]
-        n = len(zone)
+        # get samples of the zone
+        zone = zones[nz - 1]
+        n_samples = len(zone)
 
-        # Exclude burn-in
-        end_bi = math.ceil(n * burn_in)
+        # exclude burn-in
+        end_bi = math.ceil(n_samples * burn_in)
 
-        density = (np.sum(zone[end_bi:], axis=0, dtype=np.int32) / (n - end_bi))
+        # compute frequency of each point in that zone
+        density = (np.sum(zone[end_bi:], axis=0, dtype=np.int32) / (n_samples - end_bi))
 
-    # cmap = plt.cm.get_cmap("plasma")
-    cmap = plt.cm.get_cmap('YlOrRd')
-    cmap.set_under(color='grey')
-    sc = ax.scatter(*all_sites.T, c=density, s=size, cmap=cmap, vmin=0.1)
-    #sc = ax.scatter(*all_sites.T, c=density, s=size * density, cmap=cmap, vmin=0.1, zorder=10)
+    # sorting points according to their frequency in the posterior
+    # -> high frequency points are plotted over low frequency points
+    X, Y = positions
+    positions_sorted = [[c for _, c in sorted(zip(density, coords), key=lambda pair: pair[0])] for coords in positions]
+
+    density_sorted = sorted(density)
+    density_sorted = list(map(lambda x: x * 100, density_sorted))
+
+    # adding scatter plot to axes
+    ax.scatter(*positions_sorted, c=density_sorted, s=size, cmap=cmap, vmin=0, alpha=0.6, linewidths=0)
 
     # Add labels for those sites which occur most often in the posterior
     if labels:
@@ -345,12 +503,10 @@ def plot_posterior_frequency(mcmc_res, net, nz=-1, burn_in=0.2, plot_family=None
             labels_offset = (10., 10.)
         for i, name in enumerate(names):
             if density[i] > 0.1:
-
                 plt.annotate(name, all_sites[i] + [labels_offset[0], labels_offset[1]], zorder=11, fontsize=9)
 
     # Customize plotting layout
     if plot_family == "alpha_shapes":
-
         alpha_shape = compute_alpha_shapes(mcmc_res['true_families'], net, family_alpha_shape)
         smooth_shape = alpha_shape.buffer(100, resolution=16, cap_style=1, join_style=1, mitre_limit=5.0)
         patch = PolygonPatch(smooth_shape, fc=family_color, ec=family_color, alpha=0.5,
@@ -365,25 +521,223 @@ def plot_posterior_frequency(mcmc_res, net, nz=-1, burn_in=0.2, plot_family=None
 
     if plot_edges:
         plot_triangulation_edges(samples=np.array(zones[end_bi:]), net=net, triangulation="mst", ax=ax)
-        #plot_posterior(np.array(zone[end_bi:]), net, ax=ax)
+        # plot_posterior(np.array(zone[end_bi:]), net, ax=ax)
 
-    ax.grid(False)
-    ax.set_xticks([])
-    ax.set_yticks([])
+    # ax.grid(False)
+    # ax.set_xticks([])
+    # ax.set_yticks([])
 
-    bbox = bounding_box(all_sites)
-    offset_x = (bbox['x_max'] - bbox['x_min']) * offset_factor
-    offset_y = (bbox['y_max'] - bbox['y_min']) * offset_factor
-    plt.xlim(bbox['x_min'] - offset_x, bbox['x_max'] + offset_x)
-    plt.ylim(bbox['y_min'] - offset_y, bbox['y_max'] + offset_y)
-    cbar = plt.colorbar(sc, shrink=0.3, orientation="horizontal")
-    cbar.ax.get_xaxis().labelpad = -45
-    cbar.ax.set_xlabel('Frequency of point in posterior')
+    if annotate_zones:
+        # create list with all zone indices
+        indices_zones = [nz - 1] if nz != -1 else range(n_zones)
+        print(f'Zone indices: {indices_zones}')
 
-    fig.subplots_adjust(left=0.01, right=0.99, top=0.99, bottom=0.01)
+        for zone_index in indices_zones:
+            print()
 
-    #fig.savefig('posterior_frequency.png', dpi=400)
-    plt.show()
+    # getting axes ranges and rounding them
+    x_min, x_max = np.min(positions[0, :]), np.max(positions[0, :])
+    y_min, y_max = np.min(positions[1, :]), np.max(positions[1, :])
+    x_min, x_max = round_int(x_min, 'down'), round_int(x_max, 'up')
+    y_min, y_max = round_int(y_min, 'down'), round_int(y_max, 'up')
+
+    # print(f'x range {x_min}--{x_max}')
+    # print(f'y range {y_min}--{y_max}')
+
+    # x axis
+    ax.set_xlim([x_min, x_max])
+    x_ticks = list(np.linspace(x_min, x_max, 6))
+    ax.set_xticks(x_ticks)
+    ax.set_xticklabels([f'{x_tick:.0f}' for x_tick in x_ticks], fontsize=fontsize)
+
+    # y axis
+    ax.set_ylim([y_min, y_max])
+    y_ticks = list(np.linspace(y_min, y_max, 6))
+    ax.set_yticks(y_ticks)
+    ax.set_yticklabels([f'{y_tick:.0f}' for y_tick in y_ticks], fontsize=fontsize)
+
+    [ax.spines[side].set_linewidth(frame_width) for side in ['left', 'bottom', 'right', 'top']]
+    plt.rcParams["axes.linewidth"] = frame_width
+
+    # colorbar
+    cbar_ticks = list(np.linspace(0, 1, 6))
+    cbar_ticklabels = [f'{round(t * 100, 0):.0f}' for t in cbar_ticks]
+
+    divider = make_axes_locatable(ax)
+    cax = divider.new_vertical(size="3%", pad=1, pack_start=True)
+    fig.add_axes(cax)
+    cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=mpl.colors.Normalize(vmin=0, vmax=1),
+                                     orientation='horizontal', ticks=cbar_ticks)
+    cbar.ax.set_xlabel('Frequency of point in posterior (%)', fontsize=fontsize, labelpad=-75)
+    cbar.ax.set_xticklabels(cbar_ticklabels)
+    cbar.ax.tick_params(labelsize=fontsize)
+
+    # ax.set_title(title, fontsize=fontsize)
+
+    fig.savefig(fname, bbox_inches='tight', dpi=400)
+    # plt.show()
+
+
+def plot_minimum_spanning_tree(mcmc_res, network, z=0, burn_in=0.2, ts_posterior_freq=0.8,
+                               cmap=plt.get_cmap('jet'), fname='minimum_spanning_tree.png'):
+    """ This function plots the minimum spanning tree of the sites that are above the posterior frequency threshold.
+
+    Args:
+        mcmc_res (dict): the output from the MCMC neatly collected in a dict
+        network (dict): The full network containing all sites.
+        z (int): which zone should be plotted?
+        burn_in (float): Percentage of first samples which is discarded as burn-in
+        ts_posterior_freq (float): threshold for sites to be included in the mst
+        fname (str): a path followed by a the name of the file
+    """
+
+    fontsize = 24
+    line_thickness = 2
+    frame_width = 1.5
+    size = 5
+    plt.rcParams["axes.linewidth"] = frame_width
+
+
+    fig, ax = plt.subplots(figsize=(15, 10))
+
+    # getting zone data
+    zones = mcmc_res['zones']
+    zone = zones[z-1]
+    n_samples = len(zone)
+
+    # exclude burn-in
+    end_bi = math.ceil(n_samples * burn_in)
+
+    # compute posterior frequency of each point in the zone
+    posterior_freq = (np.sum(zone[end_bi:], axis=0, dtype=np.int32) / (n_samples - end_bi))
+
+    print(f'Shape posterior frequency: {posterior_freq.shape}')
+
+    # contact points have a higher posterior frequency than passed threshold
+    is_contact_point = posterior_freq > ts_posterior_freq
+    n_contact_points = np.count_nonzero(is_contact_point == True)
+
+    print(f'Number of contact points: {n_contact_points}')
+
+
+    # getting locations and distance matrix for those locations from the network
+    locations = network['locations']
+    dist_mat = network['dist_mat']
+
+    print(f'Shape locations: {locations.shape}')
+    print(f'Shape distance matrix: {dist_mat.shape}')
+
+    # subsetting locations, posterior frequencies, and distance matrix to contact points (cp)
+    cp_locations = locations[is_contact_point,:]
+    cp_posterior_freq = posterior_freq[is_contact_point]
+    cp_dist_mat = dist_mat[is_contact_point]
+    cp_dist_mat = cp_dist_mat[:,is_contact_point]
+
+    print(f'Shape sub locations: {cp_locations.shape}')
+    print(f'Shape sub distance matrix: {cp_dist_mat.shape}')
+
+    if not len(cp_locations) > 3:
+        raise Exception(f'Cannot compute minimum spanning tree of network with size {len(cp_locations)}.')
+
+    # computing the minimum spanning tree of contact points
+    cp_delaunay = compute_delaunay(cp_locations)
+    cp_mst = minimum_spanning_tree(cp_delaunay.multiply(cp_dist_mat))
+
+    # converting minimum spanning tree to boolean array denoting whether contact points are connected
+    cp_mst = cp_mst.toarray()
+    cp_connections = cp_mst > 0
+
+    # plotting every edge (connections of points) of the network
+    for index, connected in np.ndenumerate(cp_connections):
+        if connected:
+
+            i1, i2 = index
+
+            # first contact point
+            cp1_loc = cp_locations[i1]
+            cp1_freq = cp_posterior_freq[i1]
+
+            # second contact point
+            cp2_loc = cp_locations[i2]
+            cp2_freq = cp_posterior_freq[i2]
+
+            # print(f'Point1: ({vertex1[0]}/{vertex1[1]}) Point2: ({vertex2[0]}/{vertex2[1]})')
+            n_fragments = 100
+            # computing color gradient
+            x = np.linspace(cp1_loc[0], cp2_loc[0], n_fragments)
+            y = np.linspace(cp1_loc[1], cp2_loc[1], n_fragments)
+            z = np.linspace(cp1_freq, cp2_freq, n_fragments)
+
+            colorline(x, y, z=z, cmap=cmap, norm=plt.Normalize(0, 1),
+                      linewidth=line_thickness)
+            # ax.plot([cp1_loc[0], cp2_loc[0]], [cp1_loc[1], cp2_loc[1]], 'ro-')
+
+
+
+    # getting colors for all points according to their frequency
+    norm = mpl.colors.Normalize(vmin=0, vmax=1)
+    colors = np.array([cmap(norm(freq)) for freq in list(posterior_freq)])
+
+
+    # plotting contact points
+    ax.scatter(locations[is_contact_point,0], locations[is_contact_point,1], c=colors[is_contact_point],
+               linewidths=0, edgecolors='black')
+
+
+
+    # plotting non contact points
+    not_contact_point = np.logical_not(is_contact_point)
+    sc = ax.scatter(locations[not_contact_point, 0], locations[not_contact_point, 1], c=colors[not_contact_point])
+
+
+
+    # getting axes ranges and rounding them
+    x_min, x_max = np.min(cp_locations[:, 0]), np.max(cp_locations[:, 0])
+    y_min, y_max = np.min(cp_locations[:, 1]), np.max(cp_locations[:, 1])
+    x_min, x_max = round_int(x_min, 'down'), round_int(x_max, 'up')
+    y_min, y_max = round_int(y_min, 'down'), round_int(y_max, 'up')
+
+
+    print(f'x range {x_min}--{x_max}')
+    print(f'y range {y_min}--{y_max}')
+
+    # x axis
+    ax.set_xlim([x_min, x_max])
+    x_step = (x_max - x_min) // 5
+    x_ticks = np.arange(x_min, x_max+x_step, x_step)
+    ax.set_xticks(x_ticks)
+    ax.set_xticklabels(x_ticks, fontsize=fontsize)
+
+    # y axis
+    ax.set_ylim([y_min, y_max])
+    y_step = (y_max - y_min) // 5
+    y_ticks = np.arange(y_min, y_max+y_step, y_step)
+    ax.set_yticks(y_ticks)
+    ax.set_yticklabels(y_ticks, fontsize=fontsize)
+
+
+    # colorbar
+    n_ticks = 6 if (ts_posterior_freq * 10) % 2 == 0 else 11
+    cbar_ticks = list(np.linspace(0, 1, n_ticks))
+    cbar_step = 1 / (n_ticks - 1)
+    i_label = int(ts_posterior_freq / cbar_step)
+    cbar_ticklabels = [f'{round(t * 100, 0):.0f}' for t in cbar_ticks]
+    cbar_ticklabels[i_label] = f'{cbar_ticklabels[i_label]} (ts)'
+
+    divider = make_axes_locatable(ax)
+    cax = divider.new_vertical(size="3%", pad=1, pack_start=True)
+    fig.add_axes(cax)
+    cbar = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=mpl.colors.Normalize(vmin=0, vmax=1),
+                                     orientation='horizontal', ticks=cbar_ticks)
+    cbar.ax.set_xlabel('Frequency of point in posterior (%)', fontsize=fontsize, labelpad=-75)
+    cbar.ax.tick_params(labelsize=fontsize)
+    cbar.ax.plot([ts_posterior_freq] * 2, [0, 1], 'k')
+    cbar.ax.set_xticklabels(cbar_ticklabels)
+
+
+    fig.savefig(fname, bbox_inches='tight', dpi=400)
+
+
 
 
 def f_score_mle(posterior):
@@ -476,42 +830,73 @@ def compute_alpha_shapes(sites, net, alpha):
     return polygon
 
 
-def plot_trace_recall_precision(mcmc_res, burn_in=0.2, recall=True, precision=True):
+def plot_trace_recall_precision(mcmc_res, burn_in=0.2, recall=True, precision=True, fname='trace_recall_precision'):
     """
     Function to plot the trace of the MCMC chains both in terms of likelihood and recall
     Args:
         mcmc_res (dict): the output from the MCMC neatly collected in a dict
-        burn_in: (float): First n% of samples are burn-in
-        recall: (boolean): plot recall?
-        precision: (boolean): plot precision?
+        burn_in (float): First n% of samples are burn-in
+        recall (boolean): plot recall?
+        precision (boolean): plot precision?
+        fname (str): a path followed by a the name of the file
     """
 
-    fig, ax = plt.subplots()
+    fontsize = 24
+
+    line_thickness = 2
+    frame_width = 1.5
+    plt.rcParams["axes.linewidth"] = frame_width
+
+
+    fig, ax = plt.subplots(figsize=(15, 10))
     col = get_colors()
 
     # Recall
     if recall:
         y = mcmc_res['recall']
         x = range(len(y))
-        ax.plot(x, y, lw=0.75, color=col['trace']['recall'], label='Recall')
+        ax.plot(x, y, lw=line_thickness, color=col['trace']['recall'], label='Recall')
 
     # Precision
     if precision:
         y = mcmc_res['precision']
         x = range(len(y))
-        ax.plot(x, y, lw=0.75, color=col['trace']['precision'], label='Precision')
+        ax.plot(x, y, lw=line_thickness, color=col['trace']['precision'], label='Precision')
 
     ax.set_ylim(bottom=0)
+
+
     # Find index of first sample after burn-in
     end_bi = math.ceil(len(y) * burn_in)
-    end_bi_label = math.ceil(len(y) * (burn_in - 0.03))
+    end_bi_label = math.ceil(len(y) * (burn_in - 0.04))
 
-    ax.axvline(x=end_bi, lw=1, color="grey", linestyle='--')
-    plt.text(end_bi_label, 0.5, 'Burn-in', rotation=90, size=8)
-    ax.set_xlabel('Sample')
-    ax.set_title('Trace plot')
-    ax.legend(loc=4)
-    plt.show()
+    color_burn_in = 'grey'
+    ax.axvline(x=end_bi, lw=line_thickness, color=color_burn_in, linestyle='--')
+    plt.text(end_bi_label, 0.5, 'Burn-in', rotation=90, size=fontsize, color=color_burn_in)
+
+    xmin, xmax, xstep = 0, 1000, 200
+    ax.set_xlim([xmin, xmax])
+    xticks = np.arange(xmin, xmax+xstep, xstep)
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xticks, fontsize=fontsize)
+
+    ymin, ymax, ystep = 0, 1, 0.2
+    ax.set_ylim([ymin, ymax+(ystep/2)])
+    yticks = np.arange(ymin, ymax+ystep, ystep)
+    ax.set_yticks(yticks)
+    yticklabels = [f'{ytick:.1f}' for ytick in yticks]
+    yticklabels[0] = '0'
+    ax.set_yticklabels(yticklabels, fontsize=fontsize)
+
+
+    ax.set_xlabel('Sample', fontsize=fontsize, fontweight='bold')
+    # ax.set_title(title)
+
+    ax.legend(loc=4, prop={'size': fontsize}, frameon=False)
+
+    fig.savefig(fname, bbox_inches='tight', dpi=400)
+
+    #plt.show()
 
 
 def plot_dics(dics):
@@ -532,42 +917,86 @@ def plot_dics(dics):
     plt.show()
 
 
-def plot_trace_lh(mcmc_res, burn_in=0.2, true_lh=True):
+def plot_trace_lh(mcmc_res, burn_in=0.2, true_lh=True, fname='trace_likelihood.png'):
     """
     Function to plot the trace of the MCMC chains both in terms of likelihood and recall
     Args:
         mcmc_res (dict): the output from the MCMC neatly collected in a dict
         burn_in: (float): First n% of samples are burn-in
         true_lh (boolean): Visualize the true likelihood
+        fname (str): a path followed by a the name of the file
     """
 
-    fig, ax = plt.subplots()
+    fontsize = 24
+
+    line_thickness = 2
+    frame_width = 1.5
+    plt.rcParams["axes.linewidth"] = frame_width
+
+
+    fig, ax = plt.subplots(figsize=(15, 10))
     col = get_colors()
     n_zones = len(mcmc_res['zones'])
 
-    if n_zones == 1:
-        label = "true (log)-likelihood of simulated area"
-    else:
-        label = "true (log)-likelihood of simulated areas"
+
 
     y = mcmc_res['lh']
-
     x = range(len(y))
-    ax.plot(x, y, lw=0.75, color=col['trace']['lh'], label='(log)-likelihood')
+    color = 'red' # col['trace']['lh']
 
     if true_lh:
-        ax.axhline(y=mcmc_res['true_lh'], xmin=x[0], xmax=x[-1], lw=2, color="red", label=label)
+        ax.axhline(y=mcmc_res['true_lh'], xmin=x[0], xmax=x[-1], lw=2, color=color, linestyle='-.', label='True')
+    ax.plot(x, y, lw=line_thickness, color=color, linestyle='-', label='Predicted')
+
+
+
+
+
+    y_min, y_max = min(y), max(y)
+
 
     # Find index of first sample after burn-in
-    end_bi = math.ceil(len(y) * burn_in)
-    end_bi_label = math.ceil(len(y) * (burn_in - 0.03))
+    end_bi = math.ceil(len(x) * burn_in)
+    end_bi_label = math.ceil(len(x) * (burn_in - 0.03))
 
-    ax.axvline(x=end_bi, lw=1, color="grey", linestyle='--')
-    plt.text(end_bi_label, 0.5, 'Burn-in', rotation=90, size=8)
-    ax.set_xlabel('Sample')
-    ax.set_title('Trace of the likelihood')
-    ax.legend(loc=4)
-    plt.show()
+    color_burn_in = 'grey'
+    ax.axvline(x=end_bi, lw=line_thickness, color=color_burn_in, linestyle='--')
+    ypos_label = y_min + (y_max - y_min) / 2
+    ax.text(end_bi_label, ypos_label, 'Burn-in', rotation=90, size=fontsize, color=color_burn_in)
+
+    y_min, y_max = round_int(y_min, 'down'), round_int(y_max, 'up')
+    y_step = (y_max - y_min) // 6
+    ax.set_ylim([y_min, y_max])
+    y_ticks = np.arange(y_min, y_max+y_step, y_step)
+    ax.set_yticks(y_ticks)
+    yticklabels = [f'{y_tick:.0f}' for y_tick in y_ticks]
+    ax.set_yticklabels(yticklabels, fontsize=fontsize)
+
+
+    xmin, xmax, xstep = 0, 1000, 200
+    ax.set_xlim([xmin, xmax])
+    xticks = np.arange(xmin, xmax+xstep, xstep)
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xticks, fontsize=fontsize)
+
+
+    ax.set_xlabel('Sample', fontsize=fontsize, fontweight='bold')
+
+    if n_zones == 1:
+        yaxis_label = "Likelihood of simulated area (log)"
+    else:
+        yaxis_label = "Likelihood of simulated areas (log)"
+    ax.set_ylabel(yaxis_label, fontsize=fontsize, fontweight='bold')
+
+    # ax.set_title('Trace of the likelihood')
+
+    ax.legend(loc=4, prop={'size': fontsize}, frameon=False)
+
+
+    fig.savefig(fname, bbox_inches='tight', dpi=400)
+
+
+    # plt.show()
 
 
 def plot_histogram_weights(mcmc_res, feature):
@@ -817,29 +1246,36 @@ def plot_zone_size_vs_ll(mcmc_res, lh_type, mode, individual=False):
     plt.show()
 
 
-def plot_zone_size_over_time(mcmc_res, r=0, burn_in=0.2, true_zone=True):
+def plot_zone_size_over_time(mcmc_res, r=0, burn_in=0.2, true_zone=True, fname='zone_size_over_time'):
     """
          Function to plot the zone size in the posterior
          Args:
              mcmc_res (dict): the output from the MCMC neatly collected in a dict
              r (int): which run?
              burn_in: (float): First n% of samples are burn-in
+             fname (str): a path followed by a the name of the file
          """
 
     colors = get_colors()['zones']['in_zones']
-    figure, ax = plt.subplots()
 
-    # Where to put the label?
-    x_mid = []
+    fontsize = 24
+    line_thickness = 2
+    frame_width = 1.5
+    plt.rcParams["axes.linewidth"] = frame_width
+
+    fig, ax = plt.subplots(figsize=(15, 10))
+
+    x_mid = [] # label position
+    y_max = 0 # y range
     n_zones = len(mcmc_res['zones'])
 
     for c in range(n_zones):
         size = []
 
         if n_zones == 1:
-            label = 'Size of true zone'
+            label = 'True'
         else:
-            label = 'Size of true zone ' + str(c)
+            label = f'True (Zone {c})'
 
         for z in mcmc_res['zones'][c]:
             size.append(np.sum(z))
@@ -847,21 +1283,59 @@ def plot_zone_size_over_time(mcmc_res, r=0, burn_in=0.2, true_zone=True):
         x = range(len(size))
         if true_zone:
             true_size = np.sum(mcmc_res['true_zones'][c])
-            ax.axhline(y=true_size, xmin=x[0], xmax=x[-1], lw=1, color=colors[c], linestyle='--',
+            ax.axhline(y=true_size, xmin=x[0], xmax=x[-1], lw=line_thickness, color=colors[c], linestyle='-.',
                        label=label)
 
-        ax.plot(x, size, lw=0.75, color=colors[c], label="Size of zone")
+        ax.plot(x, size, lw=line_thickness, color=colors[c], label="Predicted")
 
-        x_mid.append(max(size) - min(size))
+        max_size, min_size = max(size), min(size)
+        y_max = max_size if max_size > y_max else y_max
+        x_mid.append(max_size - min_size)
+
+
 
     # Find index of first sample after burn-in
     end_bi = math.ceil(len(x) * burn_in)
     end_bi_label = math.ceil(len(x) * (burn_in - 0.03))
 
-    ax.axvline(x=end_bi, lw=1, color="grey", linestyle='--')
-    ax.text(end_bi_label, max(x_mid), 'Burn-in', rotation=90, size=8)
-    ax.legend(loc=4)
-    plt.show()
+    color_burn_in = 'grey'
+    ax.axvline(x=end_bi, lw=line_thickness, color=color_burn_in, linestyle='--')
+    ax.text(end_bi_label, max(x_mid), 'Burn-in', rotation=90, size=fontsize, color=color_burn_in)
+
+
+
+    ax.set_ylim(bottom=0)
+
+
+    xmin, xmax, xstep = 0, 1000, 200
+    ax.set_xlim([xmin, xmax])
+    xticks = np.arange(xmin, xmax+xstep, xstep)
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xticks, fontsize=fontsize)
+
+
+    y_min, y_max = 0, round_int(y_max, 'up')
+    y_step = (y_max - y_min) // 6
+    ax.set_ylim([y_min, y_max])
+    y_ticks = np.arange(y_min, y_max+y_step, y_step)
+    ax.set_yticks(y_ticks)
+    yticklabels = [f'{y_tick:.0f}' for y_tick in y_ticks]
+    yticklabels[0] = '0'
+    ax.set_yticklabels(yticklabels, fontsize=fontsize)
+
+
+    ax.set_xlabel('Sample', fontsize=fontsize, fontweight='bold')
+    ax.set_ylabel('Zone size', fontsize=fontsize, fontweight='bold')
+
+    # ax.set_title(title)
+
+    ax.legend(loc=4, prop={'size': fontsize}, frameon=False)
+
+    fig.savefig(fname, bbox_inches='tight', dpi=400)
+
+    #plt.show()
+    
+    
 
 
 def plot_gamma_parameters(ecdf):

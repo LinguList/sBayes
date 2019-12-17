@@ -595,7 +595,7 @@ def add_edge(edges, edge_nodes, coords, i, j):
     edge_nodes.append(coords[[i, j]])
 
 
-def samples2res(samples):
+def samples2res_old(samples):
     """
     Stores the output of the MCMC contained in samples in a simple data container (dict).
     The returned data container facilitates the analysis of the results (e.g. plotting).
@@ -664,7 +664,108 @@ def samples2res(samples):
 
 
 
-def round_int(n, mode='up'):
+def samples2res(samples):
+    """
+    Stores the output of the MCMC contained in samples in a simple data container (dict).
+    The returned data container facilitates the analysis of the results (e.g. plotting).
+    Args:
+        samples (list): samples
+    """
+
+    n_zones = samples['sample_zones'][0].shape[0]
+
+    # Define output format for estimated samples
+    mcmc_res = {
+        'lh': [],
+        'prior': [],
+        'recall': [],
+        'precision': [],
+        'posterior': [],
+        'zones': [[] for _ in range(n_zones)],
+        'weights': [],
+        'p_global': [],
+        'p_zones': [[] for _ in range(n_zones)],
+        'true_zones': [],
+        'n_zones': n_zones,
+    }
+
+    # Collect true sample
+    true_z = np.any(samples['true_zones'], axis=0)
+    mcmc_res['true_zones'].append(true_z)
+    mcmc_res['true_weights'] = samples['true_weights']
+    mcmc_res['true_p_global'] = samples['true_p_global']
+    mcmc_res['true_p_zones'] = samples['true_p_zones']
+
+    if 'true_families' in samples.keys():
+        if samples['sample_p_families'][0] is not None:
+            n_families = samples['sample_p_families'][0].shape[0]
+        else:
+            n_families = 0
+        mcmc_res['p_families'] = [[] for _ in range(n_families)]
+        mcmc_res['true_families'] = samples['true_families']
+        mcmc_res['true_p_families'] = samples['true_p_families']
+
+    mcmc_res['true_lh'] = samples['true_ll']
+    true_posterior = samples['true_ll'] + samples['true_prior']
+    mcmc_res['true_posterior'] = true_posterior
+
+
+
+    for t in range(len(samples['sample_zones'])):
+
+        # Zones and p_zones
+        for z in range(n_zones):
+            mcmc_res['zones'][z].append(samples['sample_zones'][t][z])
+            mcmc_res['p_zones'][z].append(transform_p_from_log(samples['sample_p_zones'][t])[z])
+
+        # Weights
+        mcmc_res['weights'].append(transform_weights_from_log(samples['sample_weights'][t]))
+
+        if 'true_families' in samples.keys():
+            # p_families
+            for fam in range(n_families):
+                mcmc_res['p_families'][fam].append(transform_p_from_log(samples['sample_p_families'][t])[fam])
+
+        # Likelihood, prior and posterior
+        mcmc_res['lh'].append(samples['sample_likelihood'][t])
+        mcmc_res['prior'].append(samples['sample_prior'][t])
+
+        posterior = samples['sample_likelihood'][t] + samples['sample_prior'][t]
+        mcmc_res['posterior'].append(posterior)
+
+        # Recall and precision
+        sample_z = samples['sample_zones'][t][0]
+        n_true = np.sum(true_z)
+
+        intersections = np.minimum(sample_z, true_z)
+        total_recall = np.sum(intersections, axis=0) / n_true
+        mcmc_res['recall'].append(total_recall)
+
+        precision = np.sum(intersections, axis=0) / np.sum(sample_z, axis=0)
+        mcmc_res['precision'].append(precision)
+    np.set_printoptions(suppress=True)
+
+    return mcmc_res
+
+
+
+def linear_rescale(value, old_min, old_max, new_min, new_max):
+    """
+    Function to linear rescale a number to a new range
+
+    Args:
+         n (float): number to rescale
+         old_min (float): old minimum of value range
+         old_max (float): old maximum of value range
+         new_min (float): new minimum of value range
+         new_max (float): new maximum of vlaue range
+    """
+
+    return (new_max - new_min) / (old_max - old_min) * (value - old_max) + old_max
+
+
+
+def round_int_old(n, mode='up', offset=0):
     """
     Function to round an integer for the calculation of axes limits.
     For example:
@@ -674,23 +775,149 @@ def round_int(n, mode='up'):
     Args:
          n (int): integer number to round
          mode (str): round 'up' or 'down'
+         offset (int): adding offset to rounded number
     """
+
+    if mode != 'up' and mode != 'down':
+        raise Exception(f'Unknown mode: "{mode}". Use either "up" or "down".')
 
     n = int(n) if isinstance(n, float) else n
     n_digits = len(str(n)) if n > 0 else len(str(n)) - 1
-    convertor = 10 ** (n_digits - 2)
 
-    if mode == 'up':
-        return ceil(n / convertor) * convertor
-    elif mode == 'down':
-        return floor(n / convertor) * convertor
+    # special rules for 1 and 2 digit numbers
+    if n_digits == 1:
+        n_rounded = 0 if mode == 'down' else 10
+
+    elif n_digits == 2:
+        n_rounded = (n // 10) * 10 if mode == 'down' else (n // 10 + 1) * 10
+
     else:
+        convertor = 10 ** (n_digits - 2)
+        if mode == 'up':
+            n_rounded = ceil(n / convertor) * convertor
+            n_rounded += offset * convertor
+        if mode == 'down':
+            n_rounded = floor(n / convertor) * convertor
+            n_rounded -= offset * convertor
+
+    return n_rounded
+
+
+def round_single_int(n, mode='up', position=2, offset=1):
+    """
+    Function to round an integer for the calculation of axes limits.
+    For example:
+    up: 113 -> 120, 3456 -> 3500
+    down: 113 -> 110, 3456 -> 3450
+
+    Args:
+         n (int): integer number to round
+         mode (str): round 'up' or 'down'
+         offset (int): adding offset to rounded number
+    """
+
+    print(f'rounding {mode} {n} (position {position} offset {offset})')
+
+    # convert to int if necessary and get number of digits
+    n = int(n) if isinstance(n, float) else n
+    n_digits = len(str(n)) if n > 0 else len(str(n)) - 1
+
+    # check for validity of input parameters
+    if mode != 'up' and mode != 'down':
+        raise Exception(f'Unknown mode: "{mode}". Use either "up" or "down".')
+    if position > n_digits:
+        raise Exception(f'Position {position} is not valid for a number with only {n_digits} digits.')
+
+    # special rules for 1 and 2 digit numbers
+    if n_digits == 1:
+        n_rounded = n - offset if mode == 'down' else n + offset
+
+    elif n_digits == 2:
+        if position == 1:
+            base = n // 10 * 10
+            n_rounded = base - offset * 10 if mode == 'down' else base + ((offset + 1) * 10)
+        else:
+            assert (position == 2)
+            n_rounded = n - offset if mode == 'down' else n + offset
+
+
+    else:
+        if not position == n_digits:
+            factor = 10 ** (n_digits - position)
+            base = (n // factor) * factor
+            print(f'factor {factor} base {base}')
+            n_rounded = base - offset * factor if mode == 'down' else base + ((offset + 1) * factor)
+        else:
+            n_rounded = n - offset if mode == 'down' else n + offset
+
+    print(f'rounded to {n_rounded}')
+    return n_rounded
+
+
+
+def round_multiple_ints(ups, downs, position=2, offset=1):
+
+    ups = [int(n) for n in ups]
+    downs = [int(n) for n in downs]
+
+    # find value with fewest digits
+    fewest_digits = len(str(np.min(ups + downs)))
+
+    print(f'rounding multiples {ups} {downs} {fewest_digits}')
+
+    ups_rounded = []
+    for n in ups:
+        length = len(str(n))
+        print(f'n {n} length {length}')
+        n_rounded = round_single_int(n, 'up', position + length - fewest_digits, offset)
+        ups_rounded.append(n_rounded)
+
+    downs_rounded = []
+    for n in downs:
+        length = len(str(n))
+        n_rounded = round_single_int(n, 'down', position + length - fewest_digits, offset)
+        downs_rounded.append(n_rounded)
+
+    return ups_rounded, downs_rounded
+
+
+
+
+
+def round_int(n, mode='up', offset=0):
+    """
+    Function to round an integer for the calculation of axes limits.
+    For example:
+    up: 113 -> 120, 3456 -> 3500
+    down: 113 -> 110, 3456 -> 3450
+
+    Args:
+         n (int): integer number to round
+         mode (str): round 'up' or 'down'
+         offset (int): adding offset to rounded number
+    """
+
+    if mode != 'up' and mode != 'down':
         raise Exception(f'Unknown mode: "{mode}". Use either "up" or "down".')
 
+    n = int(n) if isinstance(n, float) else n
+    convertor = 10 ** (len(str(offset)) - 1)
+
+    if n > offset: # number is larger than offset
+        if mode == 'up':
+            n_rounded = ceil(n / convertor) * convertor
+            n_rounded += offset
+        if mode == 'down':
+            n_rounded = floor(n / convertor) * convertor
+            n_rounded -= offset
+
+    else: # number is smaller than offset
+        n_rounded = offset + convertor if mode == 'up' else -offset
+
+    return n_rounded
 
 
-
-def colorline(x, y, z=None, cmap=plt.get_cmap('copper'), norm=plt.Normalize(0.0, 1.0), linewidth=3, alpha=1.0):
+def colorline(ax, x, y, z=None, cmap=plt.get_cmap('copper'), norm=plt.Normalize(0.0, 1.0), linewidth=3, alpha=1.0):
     """
     Plot a colored line with coordinates x and y
     Optionally specify colors in the array z
@@ -720,9 +947,9 @@ def colorline(x, y, z=None, cmap=plt.get_cmap('copper'), norm=plt.Normalize(0.0,
         return segments
 
     segments = make_segments(x, y)
-    lc = LineCollection(segments, array=z, cmap=cmap, norm=norm, linewidth=linewidth, alpha=alpha)
+    lc = LineCollection(segments, array=z, cmap=cmap, norm=norm, linewidth=linewidth, alpha=alpha, zorder=1)
 
-    ax = plt.gca()
+    # ax = plt.gca()
     ax.add_collection(lc)
 
     return lc

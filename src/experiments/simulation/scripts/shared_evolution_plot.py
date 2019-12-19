@@ -139,12 +139,12 @@ if __name__ == '__main__':
         plot_posterior_frequency4(
             mcmc_res,
             net = network,
-            nz = 1,
+            nz = -1,
             ts_posterior_freq = ts_posterior_freq,
             burn_in = burn_in,
             show_zone_bbox = True,
             show_axes = False,
-            fname = f'{PLOT_PATH}posterior_frequency4_nz{n_zones}.png'
+            fname = f'{PLOT_PATH}posterior_frequency_nz{n_zones}.png'
         )
 
         # Plot minimum spanning tree
@@ -154,12 +154,12 @@ if __name__ == '__main__':
             plot_minimum_spanning_tree4(
                 mcmc_res,
                 network,
-                z = 1,
+                z = z,
                 ts_posterior_freq = ts_posterior_freq,
                 burn_in = burn_in,
                 show_axes = False,
                 annotate = True,
-                fname = f'{PLOT_PATH}minimum spanning tree4_nz{n_zones}_z{z}.png'
+                fname = f'{PLOT_PATH}minimum_spanning_tree_nz{n_zones}_z{z}.png'
             )
 
 

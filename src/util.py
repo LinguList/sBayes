@@ -779,7 +779,8 @@ def round_int_old(n, mode='up', offset=0):
     """
 
     if mode != 'up' and mode != 'down':
-        raise Exception(f'Unknown mode: "{mode}". Use either "up" or "down".')
+        raise Exception('unknown mode')
+        # raise Exception(f'Unknown mode: "{mode}". Use either "up" or "down".')
 
     n = int(n) if isinstance(n, float) else n
     n_digits = len(str(n)) if n > 0 else len(str(n)) - 1
@@ -816,7 +817,7 @@ def round_single_int(n, mode='up', position=2, offset=1):
          offset (int): adding offset to rounded number
     """
 
-    print(f'rounding {mode} {n} (position {position} offset {offset})')
+    # print(f'rounding {mode} {n} (position {position} offset {offset})')
 
     # convert to int if necessary and get number of digits
     n = int(n) if isinstance(n, float) else n
@@ -824,9 +825,11 @@ def round_single_int(n, mode='up', position=2, offset=1):
 
     # check for validity of input parameters
     if mode != 'up' and mode != 'down':
-        raise Exception(f'Unknown mode: "{mode}". Use either "up" or "down".')
+        raise Exception('unkown mode')
+        # raise Exception(f'Unknown mode: "{mode}". Use either "up" or "down".')
     if position > n_digits:
-        raise Exception(f'Position {position} is not valid for a number with only {n_digits} digits.')
+        raise Exception('unkown mode')
+        # raise Exception(f'Position {position} is not valid for a number with only {n_digits} digits.')
 
     # special rules for 1 and 2 digit numbers
     if n_digits == 1:
@@ -845,12 +848,12 @@ def round_single_int(n, mode='up', position=2, offset=1):
         if not position == n_digits:
             factor = 10 ** (n_digits - position)
             base = (n // factor) * factor
-            print(f'factor {factor} base {base}')
+            # print(f'factor {factor} base {base}')
             n_rounded = base - offset * factor if mode == 'down' else base + ((offset + 1) * factor)
         else:
             n_rounded = n - offset if mode == 'down' else n + offset
 
-    print(f'rounded to {n_rounded}')
+    # print(f'rounded to {n_rounded}')
     return n_rounded
 
 
@@ -863,12 +866,12 @@ def round_multiple_ints(ups, downs, position=2, offset=1):
     # find value with fewest digits
     fewest_digits = len(str(np.min(ups + downs)))
 
-    print(f'rounding multiples {ups} {downs} {fewest_digits}')
+    # print(f'rounding multiples {ups} {downs} {fewest_digits}')
 
     ups_rounded = []
     for n in ups:
         length = len(str(n))
-        print(f'n {n} length {length}')
+        # print(f'n {n} length {length}')
         n_rounded = round_single_int(n, 'up', position + length - fewest_digits, offset)
         ups_rounded.append(n_rounded)
 
@@ -898,7 +901,8 @@ def round_int(n, mode='up', offset=0):
     """
 
     if mode != 'up' and mode != 'down':
-        raise Exception(f'Unknown mode: "{mode}". Use either "up" or "down".')
+        raise Exception('unkown mode')
+        # raise Exception(f'Unknown mode: "{mode}". Use either "up" or "down".')
 
     n = int(n) if isinstance(n, float) else n
     convertor = 10 ** (len(str(offset)) - 1)

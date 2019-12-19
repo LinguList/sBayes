@@ -397,7 +397,7 @@ def add_zone_bbox(ax, zones, locations, nz, n_zones, burn_in, ts_posterior_freq,
 
     # create list with all zone indices
     indices_zones = [nz-1] if nz != -1 else range(n_zones)
-    zone_colors = ['#377eb8', '#4daf4a', '#984ea3', '#a65628', '#f781bf', '#999999', '#ffff33', '#e41a1c', '#ff7f00']
+    color_zones = '#000000'
 
     for zone_index in indices_zones:
 
@@ -406,7 +406,6 @@ def add_zone_bbox(ax, zones, locations, nz, n_zones, burn_in, ts_posterior_freq,
         # get samples of the zone
         zone = zones[zone_index]
         n_samples = len(zone)
-        c = zone_colors[zone_index] if zone_index < len(zone_colors) else zone_colors[zone_index % len(zone_colors)]
 
         # exclude burn-in
         end_bi = math.ceil(n_samples * burn_in)
@@ -430,21 +429,22 @@ def add_zone_bbox(ax, zones, locations, nz, n_zones, burn_in, ts_posterior_freq,
             bbox_ll = (x_min, y_min)
             bbox_height = y_max - y_min
             bbox_width = x_max - x_min
-            bbox = mpl.patches.Rectangle(bbox_ll, bbox_width, bbox_height, fill=False, edgecolor=c, lw=2)
+            bbox = mpl.patches.Rectangle(bbox_ll, bbox_width, bbox_height, fill=False, edgecolor=color_zones, lw=2)
 
             leg_zone = ax.add_patch(bbox)
 
-            if annotate:
-                zone_name = f'A{zone_index + 1}' if len(indices_zones) > 1 else 'A'
+            # only adding a label (numeric) if annotation turned on and more than one zone
+            if annotate and n_zones > 1:
+                zone_name = f'{zone_index + 1}'
                 zone_name_yoffset = bbox_height + 100
-                zone_name_xoffset = bbox_width - 240 if len(indices_zones) > 1 else bbox_width - 180
-
-                ax.text(bbox_ll[0] + zone_name_xoffset, bbox_ll[1] + zone_name_yoffset, zone_name, fontsize=fontsize, color=c)
+                zone_name_xoffset = bbox_width - 180
+                ax.text(bbox_ll[0] + zone_name_xoffset, bbox_ll[1] + zone_name_yoffset, zone_name, fontsize=fontsize, color=color_zones)
 
             return leg_zone
 
         else:
             return None # to do
+
 def style_axes(ax, locations, offset, show=True, fontsize=22):
 
     # getting axes ranges and rounding them
@@ -524,7 +524,30 @@ def add_minimum_spanning_tree(ax, zone, locations, dist_mat, burn_in, ts_posteri
     extend_locations = cp_locations if len(cp_locations) > 3 else locations
 
     return extend_locations
+def get_axes(fig):
 
+    nrows, ncols = 100, 10
+    height_ratio = 4
+
+    gs = fig.add_gridspec(nrows=nrows, ncols=ncols)
+
+    # main plot ax
+    ax = fig.add_subplot(gs[:-height_ratio, :])
+
+    # cbar axes
+    hspace = 2
+    cbar_offset = 2
+    cbar_title_ax = fig.add_subplot(gs[-height_ratio:-height_ratio+hspace, :])
+    cbar_title_ax.set_axis_off()
+    hide_ax = fig.add_subplot(gs[-height_ratio + hspace:, 0:cbar_offset])
+    hide_ax.set_axis_off()
+    cbar1_ax = fig.add_subplot(gs[-height_ratio+hspace:, cbar_offset])
+    cbar2_ax = fig.add_subplot(gs[-height_ratio+hspace:, cbar_offset+1:ncols-cbar_offset])
+    hide_ax = fig.add_subplot(gs[-height_ratio + hspace:, ncols-cbar_offset:])
+    hide_ax.set_axis_off()
+    cbar_axes = (cbar1_ax, cbar2_ax, cbar_title_ax)
+
+    return ax, cbar_axes
 
 def plot_posterior_frequency(mcmc_res, net, nz=-1, burn_in=0.2, show_zone_bbox=False, ts_posterior_freq=0.8,
                              size=20, cmap=plt.cm.get_cmap('jet'), fname='posterior_frequency'):
@@ -1301,24 +1324,8 @@ def plot_posterior_frequency4(mcmc_res, net, nz=-1, burn_in=0.2, show_zone_bbox=
     plt.rcParams["axes.linewidth"] = pp['frame_width']
     fig = plt.figure(figsize=(pp['fig_width'], pp['fig_height']), constrained_layout=True)
 
-    # defning main plot
-    nrows, ncols = 100, 10
-    height_ratio = 4
-    gs = fig.add_gridspec(nrows=nrows, ncols=ncols)
-    ax = fig.add_subplot(gs[:-height_ratio, :])
-
-    # defining cbar axes
-    hspace = 2
-    cbar_offset = 2
-    cbar_title_ax = fig.add_subplot(gs[-height_ratio:-height_ratio+hspace, :])
-    cbar_title_ax.set_axis_off()
-    hide_ax = fig.add_subplot(gs[-height_ratio + hspace:, 0:cbar_offset])
-    hide_ax.set_axis_off()
-    cbar1_ax = fig.add_subplot(gs[-height_ratio+hspace:, cbar_offset])
-    cbar2_ax = fig.add_subplot(gs[-height_ratio+hspace:, cbar_offset+1:ncols-cbar_offset])
-    hide_ax = fig.add_subplot(gs[-height_ratio + hspace:, ncols-cbar_offset:])
-    hide_ax.set_axis_off()
-    cbar_axes = (cbar1_ax, cbar2_ax, cbar_title_ax)
+    # getting figure axes
+    ax, cbar_axes = get_axes(fig)
 
     # getting mcmc data and locations of points
     zones = mcmc_res['zones']

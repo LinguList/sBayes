@@ -11,8 +11,8 @@ if __name__ == '__main__':
 
 
     PATH = '../../../../' # relative path to contact_zones_directory
-    PATH_SIMULATION = f'{PATH}/src/experiments/simulation/'
-    PLOT_PATH = f'{PATH}plots/contact_areas/'
+    PATH_SIMULATION = PATH + '/src/experiments/simulation/'
+    PLOT_PATH = PATH + 'plots/contact_areas/'
     TEST_ZONE_DIRECTORY = 'results/contact_areas/2019-10-21_14-49/'
 
 
@@ -30,13 +30,13 @@ if __name__ == '__main__':
     for inheritance in inheritances:
 
         # Load the MCMC results
-        sample_path = f'{PATH_SIMULATION}{TEST_ZONE_DIRECTORY}contact_areas_i{inheritance}_{run}.pkl'
+        sample_path = PATH_SIMULATION + TEST_ZONE_DIRECTORY + 'contact_areas_i' + str(inheritance) + '_' + str(run) + '.pkl'
         samples = load_from(sample_path)
         mcmc_res = samples2res(samples)
         zones = mcmc_res['zones']
 
         # Retrieve the sites from the csv and transform into a network
-        sites, site_names = get_sites(f'{PATH_SIMULATION}data/sites_simulation.csv')
+        sites, site_names = get_sites(PATH_SIMULATION + 'data/sites_simulation.csv')
         network = compute_network(sites)
 
         # plot posterior frequency including family
@@ -50,7 +50,7 @@ if __name__ == '__main__':
             burn_in = burn_in,
             show_zone_bbox = True,
             show_axes = False,
-            fname = f'{PLOT_PATH}posterior_frequency_family2_inheritance{inheritance}_run{run}.png'
+            fname = f'{PLOT_PATH}posterior_frequency_inheritance{inheritance}_run{run}.png'
         )
 
         """

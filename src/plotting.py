@@ -19,6 +19,7 @@ from scipy.spatial import Delaunay
 from scipy.sparse.csgraph import minimum_spanning_tree
 from matplotlib.collections import LineCollection
 from matplotlib import cm
+from matplotlib.ticker import AutoMinorLocator
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from shapely.ops import cascaded_union, polygonize
@@ -279,9 +280,11 @@ def get_plotting_params():
     return {
         'fig_width': 15,
         'fig_height': 10,
-        'fontsize': 22,
-        'line_thickness': 2,
-        'frame_width': 1.5,
+        'fontsize': 22, # overall fontsize value
+        'line_thickness': 2, # thickness of lines in plots
+        'frame_width': 1.5, # width of frame of plots
+        'color_burn_in': 'grey', # color of burn in line and text
+        'save_format': 'png' # output format for plots
     }
 def get_cmap(ts_lf, name='YlOrRd', lower_ts=0.2):
 
@@ -295,8 +298,7 @@ def get_cmap(ts_lf, name='YlOrRd', lower_ts=0.2):
     norm = mpl.colors.Normalize(vmin=ts_lf, vmax=1)
 
     return cmap, norm
-def add_posterior_frequency_legend(fig, axes, ts_lf, cmap, norm, ts_posterior_freq, show_ts=False, title_pos=(0,0),
-                                   fontsize=22):
+def add_posterior_frequency_legend(fig, axes, ts_lf, cmap, norm, ts_posterior_freq, show_ts=True, fontsize=22):
 
     # unpacking axes
     ax_lf, ax_hf, ax_title = axes
@@ -343,7 +345,7 @@ def add_posterior_frequency_legend(fig, axes, ts_lf, cmap, norm, ts_posterior_fr
         cbar.ax.plot([linear_rescale(ts_posterior_freq, ts_lf, 1, 0, 1)] * 2, [0, 1], 'k', lw=1)
 
     # finally adding a title
-    ax_title.text(*title_pos, s='Frequency of point in posterior (%)', fontsize=fontsize, horizontalalignment='center')
+    ax_title.text(0.5, 0, s='Frequency of point in posterior (%)', fontsize=fontsize, horizontalalignment='center')
 def add_posterior_frequency_points(ax, zones, locations, ts, cmap, norm, nz=-1, burn_in=0.2, size=25):
 
     # getting number of zones
@@ -377,6 +379,7 @@ def add_posterior_frequency_points(ax, zones, locations, ts, cmap, norm, nz=-1, 
     is_lf_point = posterior_freq < ts
     lf_locations = locations[is_lf_point,:]
 
+
     ax.scatter(*lf_locations.T, s=size, c=[lf_color], alpha=1, linewidth=1, edgecolor='black')
 
 
@@ -392,8 +395,7 @@ def add_posterior_frequency_points(ax, zones, locations, ts, cmap, norm, nz=-1, 
 
     ax.scatter(*hf_locations.T, s=size, c=hf_posterior_freq, cmap=cmap, norm=norm, alpha=1, linewidth=1,
                edgecolor='black')
-def add_zone_bbox(ax, zones, locations, nz, n_zones, burn_in, ts_posterior_freq, offset, annotate=True, fontsize=18):
-
+def add_zone_bbox(ax, zones, locations, net, nz, n_zones, burn_in, ts_posterior_freq, offset, annotate=True, fontsize=18):
 
     # create list with all zone indices
     indices_zones = [nz-1] if nz != -1 else range(n_zones)
@@ -415,10 +417,9 @@ def add_zone_bbox(ax, zones, locations, nz, n_zones, burn_in, ts_posterior_freq,
 
         is_contact_point = posterior_freq > ts_posterior_freq
         cp_locations = locations[is_contact_point]
-
         # print(f'Max posterior freq {np.max(posterior_freq)}')
 
-
+        leg_zone = None
         if cp_locations.shape[0] > 0: # at least one contact point in zone
 
             zone_bbox = bounding_box(cp_locations)
@@ -431,7 +432,19 @@ def add_zone_bbox(ax, zones, locations, nz, n_zones, burn_in, ts_posterior_freq,
             bbox_width = x_max - x_min
             bbox = mpl.patches.Rectangle(bbox_ll, bbox_width, bbox_height, fill=False, edgecolor=color_zones, lw=2)
 
-            leg_zone = ax.add_patch(bbox)
+            # leg_zone = ax.add_patch(bbox)
+
+
+            alpha_shape = compute_alpha_shapes([is_contact_point], net, 0.002)
+
+            # smooth_shape = alpha_shape.buffer(100, resolution=16, cap_style=1, join_style=1, mitre_limit=5.0)
+            smooth_shape = alpha_shape.buffer(150, resolution=16, cap_style=1, join_style=1, mitre_limit=10.0)
+            # smooth_shape = alpha_shape
+            patch = PolygonPatch(smooth_shape, ec=color_zones, lw=1, ls='-', alpha=1, fill=False,
+                                 zorder=-1)
+            leg_zone = ax.add_patch(patch)
+
+
 
             # only adding a label (numeric) if annotation turned on and more than one zone
             if annotate and n_zones > 1:
@@ -439,11 +452,10 @@ def add_zone_bbox(ax, zones, locations, nz, n_zones, burn_in, ts_posterior_freq,
                 zone_name_yoffset = bbox_height + 100
                 zone_name_xoffset = bbox_width - 180
                 ax.text(bbox_ll[0] + zone_name_xoffset, bbox_ll[1] + zone_name_yoffset, zone_name, fontsize=fontsize, color=color_zones)
-
-            return leg_zone
-
         else:
-            return None # to do
+            print('computation of bbox not possible because no contact points')
+
+    return leg_zone
 
 def style_axes(ax, locations, offset, show=True, fontsize=22):
 
@@ -1335,16 +1347,16 @@ def plot_posterior_frequency4(mcmc_res, net, nz=-1, burn_in=0.2, show_zone_bbox=
     # adding scatter plot and corresponding colorbar legend
     cmap, norm = get_cmap(ts_low_frequency, name='YlOrRd', lower_ts=0.2)
     add_posterior_frequency_points(ax, zones, locations, ts_low_frequency, cmap, norm, nz=nz, burn_in=burn_in, size=size)
-    add_posterior_frequency_legend(fig, cbar_axes, ts_low_frequency, cmap, norm, ts_posterior_freq, title_pos=(0.5,0), fontsize=pp['fontsize'])
+    add_posterior_frequency_legend(fig, cbar_axes, ts_low_frequency, cmap, norm, ts_posterior_freq, fontsize=pp['fontsize'])
 
     if show_zone_bbox:
-        add_zone_bbox(ax, zones, locations, nz, n_zones, burn_in, ts_posterior_freq, zone_bbox_offset)
+        add_zone_bbox(ax, zones, locations, net, nz, n_zones, burn_in, ts_posterior_freq, zone_bbox_offset)
 
     # styling the axes
     style_axes(ax, locations, frame_offset, show=show_axes, fontsize=pp['fontsize'])
 
 
-    fig.savefig(fname, bbox_inches='tight', dpi=400)
+    fig.savefig(f"{fname}.{pp['save_format']}", bbox_inches='tight', dpi=400, format=pp['save_format'])
 
 
 def plot_posterior_frequency_family1(mcmc_res, net, nz=-1, burn_in=0.2, show_zone_bbox=False, zone_bbox_offset=200,
@@ -1629,28 +1641,8 @@ def plot_posterior_frequency_family2(mcmc_res, net, nz=-1, burn_in=0.2, show_zon
     fig = plt.figure(figsize=(width,height), constrained_layout=True)
 
 
-    # setting up grid of figure
-    nrows, ncols = 100, 20
-    gs = fig.add_gridspec(nrows=100, ncols=20)
+    ax, cbar_axes = get_axes(fig)
 
-    hspace = 2
-    height_ratio = 4
-
-    # main ax of plot
-    ax = fig.add_subplot(gs[:-height_ratio, :])
-
-    # colorbar axes
-    cbar_title_ax = fig.add_subplot(gs[-height_ratio:-height_ratio+hspace, :])
-    cbar_title_ax.set_axis_off()
-    hide_ax = fig.add_subplot(gs[-height_ratio:, :1])
-    hide_ax.set_axis_off()
-    cbar1_ax = fig.add_subplot(gs[-height_ratio+hspace:, 1:2])
-    cbar2_ax = fig.add_subplot(gs[-height_ratio+hspace:, 2:ncols-6])
-    cbar_axes = (cbar1_ax, cbar2_ax, cbar_title_ax)
-
-    # legend ax
-    leg_ax = fig.add_subplot(gs[-height_ratio:, ncols-6:])
-    leg_ax.set_axis_off()
 
     # getting mcmc data and locations of points
     zones = mcmc_res['zones']
@@ -1661,7 +1653,7 @@ def plot_posterior_frequency_family2(mcmc_res, net, nz=-1, burn_in=0.2, show_zon
     # adding scatter plot and corresponding colorbar legend
     cmap, norm = get_cmap(ts_low_frequency, name='YlOrRd', lower_ts=0.2)
     add_posterior_frequency_points(ax, zones, locations, ts_low_frequency, cmap, norm, nz=nz, burn_in=burn_in, size=size)
-    add_posterior_frequency_legend(fig, cbar_axes, ts_low_frequency, cmap, norm, ts_posterior_freq, title_pos=(0.38,0), fontsize=fontsize)
+    add_posterior_frequency_legend(fig, cbar_axes, ts_low_frequency, cmap, norm, ts_posterior_freq, fontsize=fontsize)
 
 
     # adding family information (alpha shapes), if available
@@ -1693,14 +1685,14 @@ def plot_posterior_frequency_family2(mcmc_res, net, nz=-1, burn_in=0.2, show_zon
             leg_family = ax.add_patch(patch)
 
     if show_zone_bbox:
-        leg_zone = add_zone_bbox(ax, zones, locations, nz, n_zones, burn_in, ts_posterior_freq, zone_bbox_offset)
+        leg_zone = add_zone_bbox(ax, zones, locations, net, nz, n_zones, burn_in, ts_posterior_freq, zone_bbox_offset)
 
 
     # styling the axes
     style_axes(ax, locations, frame_offset, show=show_axes, fontsize=fontsize)
 
     # adding a legend to the plot
-    leg_ax.legend((leg_family, leg_zone), ('Family','Contact zone'), frameon=False, fontsize=fontsize, loc='center', bbox_to_anchor=(0.1, 0), mode='expand', ncol=1, columnspacing=1)
+    ax.legend((leg_zone, leg_family), ('Contact zone','Simulated family'), frameon=False, fontsize=fontsize, loc='upper right', ncol=1, columnspacing=1)
 
     # saving the figure
     fig.savefig(fname, bbox_inches='tight', dpi=400)
@@ -2183,15 +2175,28 @@ def plot_minimum_spanning_tree4(mcmc_res, net, z=0, burn_in=0.2, ts_posterior_fr
     # adding scatter plot and corresponding colorbar legend
     cmap, norm = get_cmap(ts_low_frequency, name='YlOrRd', lower_ts=0.2)
     add_posterior_frequency_points(ax, zones, locations, ts_low_frequency, cmap, norm, nz=z, burn_in=burn_in, size=size)
-    add_posterior_frequency_legend(fig, cbar_axes, ts_low_frequency, cmap, norm, ts_posterior_freq, show_ts=True, title_pos=(0.5,0), fontsize=pp['fontsize'])
+    add_posterior_frequency_legend(fig, cbar_axes, ts_low_frequency, cmap, norm, ts_posterior_freq, fontsize=pp['fontsize'])
 
     # plotting minimum spanning tree of contact points
     extend_locations = add_minimum_spanning_tree(ax, zone, locations, dist_mat, burn_in, ts_posterior_freq, cmap, norm, size=size)
 
+    if annotate and n_zones > 1:
+        zone_color = '#000000'
+        ax.tick_params(color=zone_color, labelcolor=zone_color)
+        for spine in ax.spines.values():
+            spine.set_edgecolor(zone_color)
+            spine.set_linewidth(pp['frame_width'])
+
+
+        anno_opts = dict(xy=(0.95, 0.92), xycoords='axes fraction', fontsize=pp['fontsize'], color=zone_color, va='center', ha='center')
+        ax.annotate(f'{z}', **anno_opts)
+
+
+
     # styling axes
     style_axes(ax, extend_locations, frame_offset, show=show_axes, fontsize=pp['fontsize'])
 
-    fig.savefig(fname, bbox_inches='tight', dpi=400)
+    fig.savefig(f"{fname}.{pp['save_format']}", bbox_inches='tight', dpi=400, format=pp['save_format'])
 
 
 
@@ -3015,29 +3020,26 @@ def plot_trace_recall_precision(mcmc_res, burn_in=0.2, recall=True, precision=Tr
         fname (str): a path followed by a the name of the file
     """
 
-    fontsize = 24
+    pp = get_plotting_params()
 
-    line_thickness = 2
-    frame_width = 1.5
-    plt.rcParams["axes.linewidth"] = frame_width
+    plt.rcParams["axes.linewidth"] = pp['frame_width']
 
 
-    fig, ax = plt.subplots(figsize=(15, 10))
-    col = get_colors()
+    fig, ax = plt.subplots(figsize=(pp['fig_width'], pp['fig_height']))
 
     # Recall
     if recall:
         y = mcmc_res['recall']
         x = range(len(y))
         # col['trace']['recall']
-        ax.plot(x, y, lw=line_thickness, color='#e41a1c', label='Recall')
+        ax.plot(x, y, lw=pp['line_thickness'], color='#e41a1c', label='Recall')
 
     # Precision
     if precision:
         y = mcmc_res['precision']
         x = range(len(y))
         # col['trace']['precision']
-        ax.plot(x, y, lw=line_thickness, color='#377eb8', label='Precision')
+        ax.plot(x, y, lw=pp['line_thickness'], color='#377eb8', label='Precision')
 
     ax.set_ylim(bottom=0)
 
@@ -3047,15 +3049,15 @@ def plot_trace_recall_precision(mcmc_res, burn_in=0.2, recall=True, precision=Tr
     end_bi_label = math.ceil(len(y) * (burn_in - 0.04))
 
     color_burn_in = 'grey'
-    ax.axvline(x=end_bi, lw=line_thickness, color=color_burn_in, linestyle='--')
-    plt.text(end_bi_label, 0.5, 'Burn-in', rotation=90, size=fontsize, color=color_burn_in)
+    ax.axvline(x=end_bi, lw=pp['line_thickness'], color=pp['color_burn_in'], linestyle='--')
+    plt.text(end_bi_label, 0.5, 'Burn-in', rotation=90, size=pp['fontsize'], color=pp['color_burn_in'])
 
     x_min, x_max = 0, 1000
     ax.set_xlim([x_min, x_max])
     n_ticks = 6 if int(burn_in * 100) % 20 == 0 else 12
     x_ticks = np.linspace(x_min, x_max, n_ticks)
     ax.set_xticks(x_ticks)
-    ax.set_xticklabels([f'{x_tick:.0f}' for x_tick in x_ticks], fontsize=fontsize)
+    ax.set_xticklabels([f'{x_tick:.0f}' for x_tick in x_ticks], fontsize=pp['fontsize'])
 
     y_min, y_max, y_step = 0, 1, 0.2
     ax.set_ylim([y_min, y_max + (y_step / 2)])
@@ -3063,35 +3065,140 @@ def plot_trace_recall_precision(mcmc_res, burn_in=0.2, recall=True, precision=Tr
     ax.set_yticks(y_ticks)
     y_ticklabels = [f'{y_tick:.1f}' for y_tick in y_ticks]
     y_ticklabels[0] = '0'
-    ax.set_yticklabels(y_ticklabels, fontsize=fontsize)
+    ax.set_yticklabels(y_ticklabels, fontsize=pp['fontsize'])
 
 
-    ax.set_xlabel('Sample', fontsize=fontsize, fontweight='bold')
-    # ax.set_title(title)
+    ax.set_xlabel('Sample', fontsize=pp['fontsize'], fontweight='bold')
 
-    ax.legend(loc=4, prop={'size': fontsize}, frameon=False)
+    ax.legend(loc=4, prop={'size': pp['fontsize']}, frameon=False)
 
-    fig.savefig(fname, bbox_inches='tight', dpi=400)
-
-    #plt.show()
+    fig.savefig(f"{fname}.{pp['save_format']}", bbox_inches='tight', dpi=400, format=pp['save_format'])
 
 
-def plot_dics(dics):
+
+def plot_traces(recall, precision, fname='trace_recalls_precisions'):
+    """
+    Function to plot the trace of the MCMC chains both in terms of likelihood and recall
+    Args:
+        mcmc_res (dict): the output from the MCMC neatly collected in a dict
+        burn_in (float): First n% of samples are burn-in
+        recall (boolean): plot recall?
+        precision (boolean): plot precision?
+        fname (str): a path followed by a the name of the file
+    """
+
+    pp = get_plotting_params()
+
+    plt.rcParams["axes.linewidth"] = pp['frame_width']
+
+
+    fig, ax = plt.subplots(figsize=(pp['fig_width'], pp['fig_height']))
+
+    n_zones = 7
+
+    # Recall
+    x = list(range(len(recall)))
+    y = recall
+    ax.plot(x, y, lw=pp['line_thickness'], color='#e41a1c', label='Recall')
+
+    # Precision
+    x = list(range(len(precision)))
+    y = precision
+    ax.plot(x, y, lw=pp['line_thickness'], color='#377eb8', label='Precision')
+
+    ax.set_ylim(bottom=0)
+
+    x_min, x_max = 0, len(recall)
+
+    ax.set_xlim([x_min, x_max])
+    n_ticks = n_zones + 1
+    x_ticks = np.linspace(x_min, x_max, n_ticks)
+    x_ticks_offset = 500
+    x_ticks = [x_tick - x_ticks_offset for x_tick in x_ticks if x_tick > 0]
+    ax.set_xticks(x_ticks)
+    x_ticklabels = [f'{x_ticklabel:.0f} Zones' for x_ticklabel in np.linspace(1, 7, n_zones)]
+    x_ticklabels[0] = '1 Zone'
+    # x_ticklabels = [f'{x_ticklabel:.0f}' for x_ticklabel in np.linspace(1, 7, n_zones)]
+    # ax.set_xlabel('Number of zones', fontsize=pp['fontsize'], fontweight='bold')
+    ax.set_xticklabels(x_ticklabels, fontsize=pp['fontsize'])
+
+    minor_locator = AutoMinorLocator(2)
+    ax.xaxis.set_minor_locator(minor_locator)
+    ax.grid(which='minor', axis='x', color='#000000', linestyle='-')
+    ax.set_axisbelow(True)
+
+
+    y_min, y_max, y_step = 0, 1, 0.2
+    ax.set_ylim([y_min, y_max + (y_step / 2)])
+    y_ticks = np.arange(y_min, y_max + y_step, y_step)
+    ax.set_yticks(y_ticks)
+    y_ticklabels = [f'{y_tick:.1f}' for y_tick in y_ticks]
+    y_ticklabels[0] = '0'
+    ax.set_yticklabels(y_ticklabels, fontsize=pp['fontsize'])
+
+
+
+
+    ax.legend(loc=4, prop={'size': pp['fontsize']}, frameon=True, framealpha=1, facecolor='#ffffff', edgecolor='#ffffff')
+
+    fig.savefig(f"{fname}.{pp['save_format']}", bbox_inches='tight', dpi=400, format=pp['save_format'])
+
+
+
+
+def plot_dics(dics, fname='DICs'):
     """This function plots dics. What did you think?
     Args:
         dics(dict): A dict of DICs from different models
 
     """
-    fig, ax = plt.subplots()
-    col = get_colors()
+    pp = get_plotting_params()
 
-    x = range(len(dics))
-    y = dics.values()
+    plt.rcParams["axes.linewidth"] = pp['frame_width']
 
-    ax.plot(x, y, lw=0.75, color=col['trace']['recall'], label='DIC')
-    names = dics.keys()
-    plt.xticks(x, names)
-    plt.show()
+    fig, ax = plt.subplots(figsize=(pp['fig_width'], pp['fig_height']))
+
+
+    x = list(dics.keys())
+    y = list(dics.values())
+
+
+    ax.plot(x, y, lw=pp['line_thickness'], color='#000000', label='DIC')
+
+
+    y_min, y_max = min(y), max(y)
+
+    # round y min and y max to 1000 up and down, respectively
+    n_digits = len(str(int(y_min))) - 1
+    convertor = 10 ** (n_digits - 2)
+    y_min_old, y_max_old = y_min, y_max
+    y_min = int(np.floor(y_min / convertor) * convertor)
+    y_max = int(np.ceil(y_max / convertor) * convertor)
+
+    ax.set_ylim([y_min, y_max])
+    y_ticks = np.linspace(y_min, y_max, 6)
+    ax.set_yticks(y_ticks)
+    yticklabels = [f'{y_tick:.0f}' for y_tick in y_ticks]
+    ax.set_yticklabels(yticklabels, fontsize=pp['fontsize'])
+
+    # ax.axvline(x=end_bi, lw=pp['line_thickness'], color=pp['color_burn_in'], linestyle='--')
+    # ypos_label = y_min + (y_max - y_min) / 2
+    # ax.text(end_bi_label, ypos_label, 'Burn-in', rotation=90, size=pp['fontsize'], color=pp['color_burn_in'])
+
+
+    ax.set_ylabel('DIC', fontsize=pp['fontsize'], fontweight='bold')
+
+
+    x_min, x_max = min(x), max(x)
+    ax.set_xlim([x_min, x_max])
+    x_ticks = np.linspace(x_min, x_max, len(x))
+    ax.set_xticks(x_ticks)
+    ax.set_xticklabels([int(x_tick) for x_tick in x_ticks], fontsize=pp['fontsize'])
+
+    ax.set_xlabel('Number of Zones', fontsize=pp['fontsize'], fontweight='bold')
+
+
+    fig.savefig(f"{fname}.{pp['save_format']}", bbox_inches='tight', dpi=400, format=pp['save_format'])
 
 
 def plot_trace_lh(mcmc_res, burn_in=0.2, true_lh=True, fname='trace_likelihood.png'):
@@ -3104,18 +3211,14 @@ def plot_trace_lh(mcmc_res, burn_in=0.2, true_lh=True, fname='trace_likelihood.p
         fname (str): a path followed by a the name of the file
     """
 
-    fontsize = 24
+    pp = get_plotting_params()
 
-    line_thickness = 2
-    frame_width = 1.5
-    plt.rcParams["axes.linewidth"] = frame_width
+    plt.rcParams["axes.linewidth"] = pp['frame_width']
 
 
-    fig, ax = plt.subplots(figsize=(15, 10))
-    col = get_colors()
+    fig, ax = plt.subplots(figsize=(pp['fig_width'], pp['fig_height']))
+
     n_zones = len(mcmc_res['zones'])
-
-
 
     y = mcmc_res['lh']
     x = range(len(y))
@@ -3125,50 +3228,61 @@ def plot_trace_lh(mcmc_res, burn_in=0.2, true_lh=True, fname='trace_likelihood.p
 
     if true_lh:
         ax.axhline(y=mcmc_res['true_lh'], xmin=x[0], xmax=x[-1], lw=2, color='#fdbf6f', linestyle='-', label='True')
-    ax.plot(x, y, lw=line_thickness, color='#6a3d9a', linestyle='-', label='Predicted')
+    ax.plot(x, y, lw=pp['line_thickness'], color='#6a3d9a', linestyle='-', label='Predicted')
 
 
     y_min, y_max = min(y), max(y)
+
+
+
+
+
+    # round y min and y max to 100 up and down, respectively
+    n_digits = len(str(int(y_min))) - 1
+    convertor = 10 ** (n_digits - 3)
+    y_min_old, y_max_old = y_min, y_max
+    y_min = int(np.floor(y_min / convertor) * convertor)
+    y_max = int(np.ceil(y_max / convertor) * convertor)
 
 
     # add burn-in line and label
     end_bi = math.ceil(len(x) * burn_in)
     end_bi_label = math.ceil(len(x) * (burn_in - 0.03))
 
-    color_burn_in = 'grey'
-    ax.axvline(x=end_bi, lw=line_thickness, color=color_burn_in, linestyle='--')
+    ax.axvline(x=end_bi, lw=pp['line_thickness'], color=pp['color_burn_in'], linestyle='--')
     ypos_label = y_min + (y_max - y_min) / 2
-    ax.text(end_bi_label, ypos_label, 'Burn-in', rotation=90, size=fontsize, color=color_burn_in)
+    ax.text(end_bi_label, ypos_label, 'Burn-in', rotation=90, size=pp['fontsize'], color=pp['color_burn_in'])
 
 
 
-    # y_min, y_max = round_int(y_min, 'down'), round_int(y_max, 'up')
     ax.set_ylim([y_min, y_max])
     y_ticks = np.linspace(y_min, y_max, 6)
     ax.set_yticks(y_ticks)
     yticklabels = [f'{y_tick:.0f}' for y_tick in y_ticks]
-    ax.set_yticklabels(yticklabels, fontsize=fontsize)
+    ax.set_yticklabels(yticklabels, fontsize=pp['fontsize'])
+
+
 
 
     xmin, xmax, xstep = 0, 1000, 200
     ax.set_xlim([xmin, xmax])
     xticks = np.arange(xmin, xmax+xstep, xstep)
     ax.set_xticks(xticks)
-    ax.set_xticklabels(xticks, fontsize=fontsize)
+    ax.set_xticklabels(xticks, fontsize=pp['fontsize'])
 
 
-    ax.set_xlabel('Sample', fontsize=fontsize, fontweight='bold')
+    ax.set_xlabel('Sample', fontsize=pp['fontsize'], fontweight='bold')
 
     if n_zones == 1:
         yaxis_label = "Log-likelihood of simulated area"
     else:
         yaxis_label = "Log-likelihood of simulated areas"
-    ax.set_ylabel(yaxis_label, fontsize=fontsize, fontweight='bold')
+    ax.set_ylabel(yaxis_label, fontsize=pp['fontsize'], fontweight='bold')
 
-    ax.legend(loc=4, prop={'size': fontsize}, frameon=False)
+    ax.legend(loc=4, prop={'size': pp['fontsize']}, frameon=False)
 
 
-    fig.savefig(fname, bbox_inches='tight', dpi=400)
+    fig.savefig(f"{fname}.{pp['save_format']}", bbox_inches='tight', dpi=400, format=pp['save_format'])
 
 
 
@@ -3430,14 +3544,12 @@ def plot_zone_size_over_time(mcmc_res, r=0, burn_in=0.2, true_zone=True, fname='
     """
 
     # colors = get_colors()['zones']['in_zones']
+    pp = get_plotting_params()
 
-    fontsize = 24
-    line_thickness = 2
-    frame_width = 1.5
-    plt.rcParams["axes.linewidth"] = frame_width
+    plt.rcParams["axes.linewidth"] = pp['frame_width']
     zone_colors = ['#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02']
 
-    fig, ax = plt.subplots(figsize=(15, 10))
+    fig, ax = plt.subplots(figsize=(pp['fig_width'], pp['fig_height']))
 
     x_mid = [] # label position
     y_max = 0 # y range
@@ -3456,10 +3568,10 @@ def plot_zone_size_over_time(mcmc_res, r=0, burn_in=0.2, true_zone=True, fname='
         x = range(len(size))
         if true_zone:
             true_size = np.sum(mcmc_res['true_zones'][c])
-            ax.axhline(y=true_size, xmin=x[0], xmax=x[-1], lw=line_thickness, color=colors[1],
+            ax.axhline(y=true_size, xmin=x[0], xmax=x[-1], lw=pp['line_thickness'], color=colors[1],
                        linestyle=linestyle[1], label=label)
 
-        ax.plot(x, size, lw=line_thickness, color=colors[0], linestyle=linestyle[0], label="Predicted")
+        ax.plot(x, size, lw=pp['line_thickness'], color=colors[0], linestyle=linestyle[0], label="Predicted")
 
         max_size, min_size = max(size), min(size)
         y_max = max_size if max_size > y_max else y_max
@@ -3471,9 +3583,17 @@ def plot_zone_size_over_time(mcmc_res, r=0, burn_in=0.2, true_zone=True, fname='
     end_bi = math.ceil(len(x) * burn_in)
     end_bi_label = math.ceil(len(x) * (burn_in - 0.03))
 
-    color_burn_in = 'grey'
-    ax.axvline(x=end_bi, lw=line_thickness, color=color_burn_in, linestyle='--')
-    ax.text(end_bi_label, max(x_mid), 'Burn-in', rotation=90, size=fontsize, color=color_burn_in)
+    y_min = 0
+    # round y max to next 10
+    n_digits = len(str(y_max))
+    convertor = 10 ** (n_digits - 1) if n_digits <= 2 else 10 ** (n_digits - 2)
+    y_max_old = y_max
+    y_max = int(np.ceil(y_max / convertor) * convertor)
+
+
+    ax.axvline(x=end_bi, lw=pp['line_thickness'], color=pp['color_burn_in'], linestyle='--')
+    ypos_label = y_min + (y_max - y_min) / 2
+    ax.text(end_bi_label, ypos_label, 'Burn-in', rotation=90, size=pp['fontsize'], color=pp['color_burn_in'])
 
 
 
@@ -3484,21 +3604,23 @@ def plot_zone_size_over_time(mcmc_res, r=0, burn_in=0.2, true_zone=True, fname='
     ax.set_xlim([xmin, xmax])
     xticks = np.arange(xmin, xmax+xstep, xstep)
     ax.set_xticks(xticks)
-    ax.set_xticklabels(xticks, fontsize=fontsize)
+    ax.set_xticklabels(xticks, fontsize=pp['fontsize'])
 
-    y_min, y_max = 0, round_int(y_max, 'up', 0)
+
+
+
     y_ticks = np.linspace(y_min, y_max, 6)
     ax.set_yticks(y_ticks)
     yticklabels = [f'{y_tick:.0f}' for y_tick in y_ticks]
     yticklabels[0] = '0'
-    ax.set_yticklabels(yticklabels, fontsize=fontsize)
+    ax.set_yticklabels(yticklabels, fontsize=pp['fontsize'])
 
-    ax.set_xlabel('Sample', fontsize=fontsize, fontweight='bold')
-    ax.set_ylabel('Zone size', fontsize=fontsize, fontweight='bold')
+    ax.set_xlabel('Sample', fontsize=pp['fontsize'], fontweight='bold')
+    ax.set_ylabel('Zone size', fontsize=pp['fontsize'], fontweight='bold')
 
-    ax.legend(loc=4, prop={'size': fontsize}, frameon=False)
+    ax.legend(loc=4, prop={'size': pp['fontsize']}, frameon=False)
 
-    fig.savefig(fname, bbox_inches='tight', dpi=400)
+    fig.savefig(f"{fname}.{pp['save_format']}", bbox_inches='tight', dpi=400, format=pp['save_format'])
 
     
     

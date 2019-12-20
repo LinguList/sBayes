@@ -5,12 +5,19 @@ if __name__ == '__main__':
         plot_zone_size_over_time, plot_minimum_spanning_tree, plot_posterior_frequency2, plot_minimum_spanning_tree2, \
         plot_posterior_frequency3, plot_minimum_spanning_tree3, plot_posterior_frequency4, plot_minimum_spanning_tree4
     import itertools
+    import os
 
 
     PATH = '../../../../' # relative path to contact_zones_directory
     PATH_SIMULATION = f'{PATH}/src/experiments/simulation/'
-    PLOT_PATH = f'{PATH}plots/shared_evolution/'
+
+    # data directories
     TEST_ZONE_DIRECTORY = 'results/shared_evolution/2019-10-20_17-57/'
+
+    # plotting directories
+    PLOT_PATH = f'{PATH}plots/shared_evolution/'
+    if not os.path.exists(PLOT_PATH): os.makedirs(PLOT_PATH)
+
 
     # Zone, ease and number of runs
 
@@ -45,6 +52,13 @@ if __name__ == '__main__':
     for scenario in scenarios:
 
         zone, ease, run = scenario
+        print(f'Scenario: {zone} (zone), {ease} (ease), {run} (run)')
+
+        scenario_plot_path = f'{PLOT_PATH}z{zone}_e{ease}_{run}/'
+
+
+        if not os.path.exists(scenario_plot_path):
+            os.makedirs(scenario_plot_path)
 
         # Load the MCMC results
         sample_path = f'{PATH_SIMULATION}{TEST_ZONE_DIRECTORY}shared_evolution_z{zone}_e{ease}_{run}.pkl'
@@ -60,7 +74,6 @@ if __name__ == '__main__':
         sites, site_names = get_sites(f'{PATH_SIMULATION}data/sites_simulation.csv')
         network = compute_network(sites)
 
-        """
         # Plot posterior frequency
         plot_posterior_frequency4(
             mcmc_res,
@@ -70,7 +83,7 @@ if __name__ == '__main__':
             burn_in = burn_in,
             show_zone_bbox = True,
             show_axes = False,
-            fname = f'{PLOT_PATH}posterior_frequency4_z{zone}_e{ease}_{run}.png'
+            fname = f'{scenario_plot_path}posterior_frequency_z{zone}_e{ease}_{run}'
         )
 
 
@@ -83,23 +96,25 @@ if __name__ == '__main__':
             burn_in = burn_in,
             show_axes = False,
             annotate = True,
-            fname = f'{PLOT_PATH}minimum spanning tree4_z{zone}_e{ease}_{run}.png'
+            fname = f'{scenario_plot_path}minimum spanning tree_z{zone}_e{ease}_{run}'
         )
 
-
+        
+        
 
         # Plot trace of likelihood, recall and precision
         plot_trace_lh(
             mcmc_res,
             burn_in = burn_in,
             true_lh = True,
-            fname = f'{PLOT_PATH}trace_likelihood_z{zone}_e{ease}_{run}.png'
+            fname = f'{scenario_plot_path}trace_likelihood_z{zone}_e{ease}_{run}'
         )
+
 
         plot_trace_recall_precision(
             mcmc_res,
             burn_in = burn_in,
-            fname = f'{PLOT_PATH}trace_recall_precision_z{zone}_e{ease}_{run}.png'
+            fname = f'{scenario_plot_path}trace_recall_precision_z{zone}_e{ease}_{run}'
         )
 
         # Plot zone size over time
@@ -107,82 +122,9 @@ if __name__ == '__main__':
             mcmc_res,
             r = 0,
             burn_in = burn_in,
-            fname = f'{PLOT_PATH}zone_size_over_time_z{zone}_e{ease}_{run}.png'
-        )
-    """
-
-
-
-    TEST_ZONE_DIRECTORY = 'results/number_zones/2019-10-24_14-27/'
-    
-
-    scenarios = [1, 2, 3, 4, 5, 6, 7]
-    # scenarios = [4] # fix for more than 4 zones
-
-    for n_zones in scenarios:
-
-        # Load the MCMC results
-        sample_path = f'{PATH_SIMULATION}{TEST_ZONE_DIRECTORY}number_zones_nz{n_zones}_0.pkl'
-        samples = load_from(sample_path)
-        mcmc_res = samples2res(samples)
-
-        zones = mcmc_res['zones']
-        print(f'Number of zones: {len(zones)}')
-        # print(type(mcmc_res['zones']))
-        # print(len(mcmc_res['zones'][0][0]))
-
-        # Retrieve the sites from the csv and transform into a network
-        sites, site_names = get_sites(f'{PATH_SIMULATION}data/sites_simulation.csv')
-        network = compute_network(sites)
-
-        # Plot posterior frequency
-        plot_posterior_frequency4(
-            mcmc_res,
-            net = network,
-            nz = -1,
-            ts_posterior_freq = ts_posterior_freq,
-            burn_in = burn_in,
-            show_zone_bbox = True,
-            show_axes = False,
-            fname = f'{PLOT_PATH}posterior_frequency_nz{n_zones}.png'
+            fname = f'{scenario_plot_path}zone_size_over_time_z{zone}_e{ease}_{run}'
         )
 
-        # Plot minimum spanning tree
-        for z in range(1, n_zones+1):
-            print(f'MST Zone {z}')
-            # Plot minimum spanning tree
-            plot_minimum_spanning_tree4(
-                mcmc_res,
-                network,
-                z = z,
-                ts_posterior_freq = ts_posterior_freq,
-                burn_in = burn_in,
-                show_axes = False,
-                annotate = True,
-                fname = f'{PLOT_PATH}minimum_spanning_tree_nz{n_zones}_z{z}.png'
-            )
 
 
-        """
-        # Plot trace of likelihood, recall and precision
-        plot_trace_lh(
-            mcmc_res,
-            burn_in = burn_in,
-            true_lh = True,
-            fname = f'{PLOT_PATH}trace_likelihood_nz{n_zones}.png'
-        )
 
-        plot_trace_recall_precision(
-            mcmc_res,
-            burn_in = burn_in,
-            fname = f'{PLOT_PATH}trace_recall_precision_nz{n_zones}.png'
-        )
-
-        # Plot zone size over time
-        plot_zone_size_over_time(
-            mcmc_res,
-            r = 0,
-            burn_in = burn_in,
-            fname = f'{PLOT_PATH}zone_size_over_time_nz{n_zones}.png'
-        )
-        """

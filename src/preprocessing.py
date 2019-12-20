@@ -22,7 +22,7 @@ import csv
 EPS = np.finfo(float).eps
 
 
-def get_sites(file):
+def get_sites(file, subset=False):
     """ This function retrieves the simulated sites from a csv, with the following columns:
             name: a unique identifier for each site
             x: the x-coordinate
@@ -38,12 +38,15 @@ def get_sites(file):
     with open(file, 'rU') as f:
         reader = csv.reader(f)
         for row in reader:
-            if columns:
-                for i, value in enumerate(row):
-                    columns[i].append(value)
-            else:
-                # first row
-                columns = [[value] for value in row]
+            # don't add use rows if subset is turned on and they are not in the subset
+            use_row = False if subset and row[-1] == '0' else True
+            if use_row:
+                if columns:
+                    for i, value in enumerate(row):
+                        columns[i].append(value)
+                else:
+                    # first row
+                    columns = [[value] for value in row]
     csv_as_dict = {c[0]: c[1:] for c in columns}
 
     try:

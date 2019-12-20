@@ -7,14 +7,16 @@ if __name__ == '__main__':
     from src.plotting import plot_posterior_frequency, plot_trace_lh, plot_trace_recall_precision, \
         plot_zone_size_over_time, plot_dics, plot_correlation_weights, plot_histogram_weights, plot_correlation_p, \
         plot_posterior_frequency_family1, plot_posterior_frequency_family2
+    import os
 
 
 
     PATH = '../../../../' # relative path to contact_zones_directory
     PATH_SIMULATION = PATH + '/src/experiments/simulation/'
-    PLOT_PATH = PATH + 'plots/contact_areas/'
     TEST_ZONE_DIRECTORY = 'results/contact_areas/2019-10-21_14-49/'
 
+    PLOT_PATH = PATH + 'plots/contact_areas/'
+    if not os.path.exists(PLOT_PATH): os.makedirs(PLOT_PATH)
 
     # Inheritance and number of runs
     inheritance = 1
@@ -28,6 +30,10 @@ if __name__ == '__main__':
 
 
     for inheritance in inheritances:
+
+        scenario_plot_path = f'{PLOT_PATH}i{inheritance}_{run}/'
+        if not os.path.exists(scenario_plot_path):
+            os.makedirs(scenario_plot_path)
 
         # Load the MCMC results
         sample_path = PATH_SIMULATION + TEST_ZONE_DIRECTORY + 'contact_areas_i' + str(inheritance) + '_' + str(run) + '.pkl'
@@ -50,22 +56,22 @@ if __name__ == '__main__':
             burn_in = burn_in,
             show_zone_bbox = True,
             show_axes = False,
-            fname = f'{PLOT_PATH}posterior_frequency_inheritance{inheritance}_run{run}.png'
+            fname = f'{scenario_plot_path}posterior_frequency_family_i{inheritance}_{run}'
         )
 
-        """
+
         # Plot trace of likelihood, recall and precision
         plot_trace_lh(
             mcmc_res,
             burn_in = burn_in,
             true_lh = True,
-            fname = f'{PLOT_PATH}trace_likelihood_inheritance{inheritance}_run{run}.png'
+            fname = f'{scenario_plot_path}trace_likelihood_i{inheritance}_{run}'
         )
 
         plot_trace_recall_precision(
             mcmc_res,
             burn_in = burn_in,
-            fname = f'{PLOT_PATH}trace_recall_precision_inheritance{inheritance}_run{run}.png'
+            fname = f'{scenario_plot_path}trace_recall_precision_i{inheritance}_{run}'
         )
 
         # Plot zone size over time
@@ -73,6 +79,6 @@ if __name__ == '__main__':
             mcmc_res,
             r = 0,
             burn_in = burn_in,
-            fname = f'{PLOT_PATH}zone_size_over_time_inheritance{inheritance}_run{run}.png'
+            fname = f'{scenario_plot_path}zone_size_over_time_i{inheritance}_{run}'
         )
-        """
+

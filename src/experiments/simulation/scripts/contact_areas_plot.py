@@ -13,9 +13,9 @@ if __name__ == '__main__':
 
     PATH = '../../../../' # relative path to contact_zones_directory
     PATH_SIMULATION = PATH + '/src/experiments/simulation/'
-    TEST_ZONE_DIRECTORY = 'results/contact_areas/2019-10-21_14-49/'
+    TEST_ZONE_DIRECTORY = 'results/contact_zones/2019-10-21_14-49/'
 
-    PLOT_PATH = PATH + 'plots/contact_areas/'
+    PLOT_PATH = PATH + 'plots/contact_zones/'
     if not os.path.exists(PLOT_PATH): os.makedirs(PLOT_PATH)
 
     # Inheritance and number of runs
@@ -36,7 +36,7 @@ if __name__ == '__main__':
             os.makedirs(scenario_plot_path)
 
         # Load the MCMC results
-        sample_path = PATH_SIMULATION + TEST_ZONE_DIRECTORY + 'contact_areas_i' + str(inheritance) + '_' + str(run) + '.pkl'
+        sample_path = PATH_SIMULATION + TEST_ZONE_DIRECTORY + 'contact_zones_i' + str(inheritance) + '_' + str(run) + '.pkl'
         samples = load_from(sample_path)
         mcmc_res = samples2res(samples)
         zones = mcmc_res['zones']

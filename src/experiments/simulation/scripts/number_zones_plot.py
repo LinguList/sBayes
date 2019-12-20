@@ -3,7 +3,7 @@ if __name__ == '__main__':
     from src.preprocessing import get_sites, compute_network
     from src.plotting import plot_trace_recall_precision, plot_trace_lh, \
         plot_posterior_frequency, plot_dics, plot_posterior_frequency4, plot_minimum_spanning_tree4, \
-        plot_traces
+        plot_traces, plot_zone_size_over_time
     from src.postprocessing import match_zones, compute_dic
     import numpy as np
     import os
@@ -93,9 +93,7 @@ if __name__ == '__main__':
             burn_in=burn_in,
             fname=f'{scenario_plot_path}trace_recall_precision_nz{n_zones}_{run}'
         )
-        
-        
-        
+
         # Plot zone size over time
         plot_zone_size_over_time(
             mcmc_res,
@@ -103,8 +101,7 @@ if __name__ == '__main__':
             burn_in = burn_in,
             fname = f'{scenario_plot_path}zone_size_over_time_nz{n_zones}'
         )
-
-     """
+        """
 
 
 
@@ -182,7 +179,7 @@ while True:
     dics[nz] = compute_dic(mcmc_res, 0.5)
 
 
-# plot_dics(dics, fname=f'{PLOT_PATH}DICs_all_{run}')
+plot_dics(dics, fname=f'{PLOT_PATH}DICs_all_{run}')
 
 plot_traces(
     list_recall,

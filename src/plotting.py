@@ -288,14 +288,15 @@ def get_plotting_params():
     }
 def get_cmap(ts_lf, name='YlOrRd', lower_ts=0.2):
 
-    lf_color = (128 / 256, 128 / 256, 128 / 256)  # grey
+    grey_tone = 200 # from 0 (dark) to 1 (white)
+    lf_color = (grey_tone / 256, grey_tone / 256, grey_tone / 256)  # grey 128
     colors = [lf_color, (256/256, 256/256, 0/256), (256/256, 0/256, 0/256)] # use only for custom cmaps
     primary_cmap = plt.cm.get_cmap(name)
     primary_colors = [primary_cmap(c) for c in np.linspace(lower_ts, 1, 4)]
     primary_colors = primary_colors[::-1] if name == 'autumn' else primary_colors
     colors = [lf_color] + primary_colors
     cmap = LinearSegmentedColormap.from_list('custom_cmap', colors, N=1000)
-    norm = mpl.colors.Normalize(vmin=ts_lf, vmax=1)
+    norm = mpl.colors.Normalize(vmin=ts_lf, vmax=1.2)
 
     return cmap, norm
 def add_posterior_frequency_legend(fig, axes, ts_lf, cmap, norm, ts_posterior_freq, show_ts=True, fontsize=22):

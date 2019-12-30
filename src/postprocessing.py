@@ -219,7 +219,7 @@ def match_zones(mcmc_res):
     matching_list = []
     for s in zone_samples:
         i += 1
-        print(i)
+        # print(i)
 
         def clustering_agreement(p):
 

@@ -2,7 +2,7 @@ if __name__ == '__main__':
     from src.util import load_from, transform_weights_from_log
     from src.preprocessing import get_sites, compute_network
     from src.plotting import plot_trace_recall_precision, plot_trace_lh, \
-        plot_posterior_frequency, plot_dics, plot_zone_size_over_time, plot_posterior_frequency4
+        plot_posterior_frequency, plot_dics, plot_zone_size_over_time, plot_posterior_frequency
     from src.postprocessing import match_zones, compute_dic
     import numpy as np
     import os
@@ -93,7 +93,7 @@ if __name__ == '__main__':
         network = compute_network(sites=sites)
 
         # Plot posterior frequency
-        plot_posterior_frequency4(
+        plot_posterior_frequency(
             mcmc_res,
             net=network,
             nz=1,

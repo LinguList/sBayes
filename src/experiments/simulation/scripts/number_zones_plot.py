@@ -2,8 +2,9 @@ if __name__ == '__main__':
     from src.util import load_from, transform_weights_from_log, samples2res
     from src.preprocessing import get_sites, compute_network
     from src.plotting import plot_trace_recall_precision, plot_trace_lh, \
-        plot_posterior_frequency, plot_dics, plot_posterior_frequency4, plot_minimum_spanning_tree4, \
-        plot_traces, plot_zone_size_over_time
+        plot_posterior_frequency, plot_dics, plot_traces, plot_zone_size_over_time, \
+        plot_minimum_spanning_tree
+
     from src.postprocessing import match_zones, compute_dic
     import numpy as np
     import os
@@ -30,7 +31,7 @@ if __name__ == '__main__':
     ts_low_frequency = 0.5
     burn_in =  0.4
 
-    """
+
     for n_zones in scenarios:
 
         scenario_plot_path = f'{PLOT_PATH}nz{n_zones}_{run}/'
@@ -51,10 +52,10 @@ if __name__ == '__main__':
         sites, site_names = get_sites(f'{PATH_SIMULATION}data/sites_simulation.csv')
         network = compute_network(sites)
 
-        
+
         
         # Plot posterior frequency
-        plot_posterior_frequency4(
+        plot_posterior_frequency(
             mcmc_res,
             net=network,
             nz=-1,
@@ -69,7 +70,7 @@ if __name__ == '__main__':
         for z in range(1, n_zones + 1):
             print(f'MST Zone {z}')
             # Plot minimum spanning tree
-            plot_minimum_spanning_tree4(
+            plot_minimum_spanning_tree(
                 mcmc_res,
                 network,
                 z=z,
@@ -93,7 +94,7 @@ if __name__ == '__main__':
             burn_in=burn_in,
             fname=f'{scenario_plot_path}trace_recall_precision_nz{n_zones}_{run}'
         )
-
+        """
         # Plot zone size over time
         plot_zone_size_over_time(
             mcmc_res,

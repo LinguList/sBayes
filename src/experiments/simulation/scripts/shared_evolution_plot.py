@@ -2,8 +2,7 @@ if __name__ == '__main__':
     from src.util import load_from, samples2res, transform_weights_from_log,transform_p_from_log
     from src.preprocessing import compute_network, get_sites
     from src.plotting import plot_posterior_frequency, plot_trace_lh, plot_trace_recall_precision, \
-        plot_zone_size_over_time, plot_minimum_spanning_tree, plot_posterior_frequency2, plot_minimum_spanning_tree2, \
-        plot_posterior_frequency3, plot_minimum_spanning_tree3, plot_posterior_frequency4, plot_minimum_spanning_tree4
+        plot_zone_size_over_time, plot_minimum_spanning_tree
     import itertools
     import os
 
@@ -75,7 +74,7 @@ if __name__ == '__main__':
         network = compute_network(sites)
 
         # Plot posterior frequency
-        plot_posterior_frequency4(
+        plot_posterior_frequency(
             mcmc_res,
             net = network,
             nz = 1,
@@ -88,7 +87,7 @@ if __name__ == '__main__':
 
 
         # Plot minimum spanning tree
-        plot_minimum_spanning_tree4(
+        plot_minimum_spanning_tree(
             mcmc_res,
             network,
             z = 1,

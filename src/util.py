@@ -690,11 +690,12 @@ def samples2res(samples):
     }
 
     # Collect true sample
-    true_z = np.any(samples['true_zones'], axis=0)
-    mcmc_res['true_zones'].append(true_z)
-    mcmc_res['true_weights'] = samples['true_weights']
-    mcmc_res['true_p_global'] = samples['true_p_global']
-    mcmc_res['true_p_zones'] = samples['true_p_zones']
+    if 'true_zones' in samples.keys():
+        true_z = np.any(samples['true_zones'], axis=0)
+        mcmc_res['true_zones'].append(true_z)
+        mcmc_res['true_weights'] = samples['true_weights']
+        mcmc_res['true_p_global'] = samples['true_p_global']
+        mcmc_res['true_p_zones'] = samples['true_p_zones']
 
     if 'true_families' in samples.keys():
         if samples['sample_p_families'][0] is not None:
@@ -705,9 +706,10 @@ def samples2res(samples):
         mcmc_res['true_families'] = samples['true_families']
         mcmc_res['true_p_families'] = samples['true_p_families']
 
-    mcmc_res['true_lh'] = samples['true_ll']
-    true_posterior = samples['true_ll'] + samples['true_prior']
-    mcmc_res['true_posterior'] = true_posterior
+    if 'true_lh' in samples.keys():
+        mcmc_res['true_lh'] = samples['true_ll']
+        true_posterior = samples['true_ll'] + samples['true_prior']
+        mcmc_res['true_posterior'] = true_posterior
 
 
 
@@ -907,7 +909,10 @@ def round_int(n, mode='up', offset=0):
     n = int(n) if isinstance(n, float) else n
     convertor = 10 ** (len(str(offset)) - 1)
 
-    if n > offset: # number is larger than offset
+    # print(f'rounding {n} {mode} by {offset}')
+    # print(convertor)
+
+    if n > offset: # number is larger than offset (must be positive)
         if mode == 'up':
             n_rounded = ceil(n / convertor) * convertor
             n_rounded += offset
@@ -915,8 +920,14 @@ def round_int(n, mode='up', offset=0):
             n_rounded = floor(n / convertor) * convertor
             n_rounded -= offset
 
-    else: # number is smaller than offset
-        n_rounded = offset + convertor if mode == 'up' else -offset
+    else: # number is smaller than offset (can be negative)
+        if n >= 0:
+            n_rounded = offset + convertor if mode == 'up' else -offset
+        else: # for negative numbers we use round_int with inversed mode and the positive number
+            print('inverse case')
+            inverse_mode = 'up' if mode == 'down' else 'down'
+            n_rounded = round_int(abs(n), inverse_mode, offset)
+            n_rounded = - n_rounded
 
     return n_rounded
 
@@ -951,7 +962,7 @@ def colorline(ax, x, y, z=None, cmap=plt.get_cmap('copper'), norm=plt.Normalize(
         return segments
 
     segments = make_segments(x, y)
-    lc = LineCollection(segments, array=z, cmap=cmap, norm=norm, linewidth=linewidth, alpha=alpha, zorder=1)
+    lc = LineCollection(segments, array=z, cmap=cmap, norm=norm, linewidth=linewidth, alpha=1, zorder=1)
 
     # ax = plt.gca()
     ax.add_collection(lc)

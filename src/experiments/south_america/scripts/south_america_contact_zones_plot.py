@@ -5,7 +5,7 @@ if __name__ == '__main__':
     from src.postprocessing import compute_dic, match_zones
     from src.plotting import plot_posterior_frequency, plot_trace_lh, plot_trace_recall_precision, \
         plot_zone_size_over_time, plot_dics, plot_correlation_weights, plot_histogram_weights, plot_correlation_p, \
-        plot_posterior_frequency4
+        plot_posterior_frequency_map_new
 
     import numpy as np
     import os
@@ -22,18 +22,19 @@ if __name__ == '__main__':
 
     # MAP SETTINGS
     PROJ4_STRING = '+proj=eqdc +lat_0=-32 +lon_0=-60 +lat_1=-5 +lat_2=-42 +x_0=0 +y_0=0 +ellps=aust_SA +units=m +no_defs '
-    GEOJSON_MAP_PATH = 'data/map/ne_50m_land.geojson'
-    GEOJSON_RIVER_PATH = 'data/map/ne_50m_rivers_lake_centerlines_scale_rank.geojson'
+    GEOJSON_MAP_PATH = f'{PATH_SA}data/map/ne_50m_land.geojson'
+    GEOJSON_RIVER_PATH = f'{PATH_SA}data/map/ne_50m_rivers_lake_centerlines_scale_rank.geojson'
 
     # Zone, ease and number of runs
     n_zone = 3
     n_zone_file = 5
     run = 0
     n_zones = [1, 2, 3, 4, 5, 6, 7, 8]
+    n_zones = [3]
 
     # general parameters
     ts_posterior_freq = 0.8
-    ts_lower_freq = 0.5
+    ts_lower_freq = 0.8
     burn_in = 0.8
 
 
@@ -48,7 +49,8 @@ if __name__ == '__main__':
         sample_path = f'{PATH_SA}{TEST_ZONE_DIRECTORY}sa_contact_zones_nz{n_zone}_{run}.pkl'
 
         samples = load_from(sample_path)
-
+        print(samples.keys())
+        # print(samples['sample_p_families'])
         n_zones = samples['sample_zones'][0].shape[0]
         n_families = samples['sample_p_families'][0].shape[0]
 
@@ -97,9 +99,9 @@ if __name__ == '__main__':
         np.set_printoptions(suppress=True)
 
         # Retrieve the sites from the csv and transform into a network
-        sites, site_names, _, _, _, _, _ = \
+        sites, site_names, _, _, _, families, family_names = \
             read_languages_from_csv(f'{PATH_SA}data/features/features.csv')
-
+        # print(families, family_names)
         # read_features_from_csv(file_location="data/features/", log=True)
 
 
@@ -112,53 +114,126 @@ if __name__ == '__main__':
 
 
         # Compute the dic
-        dic = compute_dic(mcmc_res, burn_in=burn_in)
+        # dic = compute_dic(mcmc_res, burn_in=burn_in)
 
 
         # Plot posterior frequency
-        plot_posterior_frequency4(
+        plot_posterior_frequency_map_new(
             mcmc_res,
-            net = network,
-            nz = 1,
+            net=network,
+            labels = ['Arabela', 'Achuar', 'Tapiete', 'Chipaya'],
+            families = families,
+            family_names = family_names,
+            nz=-1,
+            burn_in=burn_in,
             ts_posterior_freq = ts_posterior_freq,
-            burn_in = burn_in,
-            show_zone_bbox = False,
-            show_axes = True,
-            fname = f'{scenario_plot_path}posterior_frequency_nz{n_zone}_{run}'
+            bg_map=True,
+            proj4=PROJ4_STRING,
+            geojson_map=GEOJSON_MAP_PATH,
+            geo_json_river=GEOJSON_RIVER_PATH,
+            fname=f'{scenario_plot_path}sa_contact_zones_nz{n_zones}_{run}'
         )
 
-        """
-        # Plot posterior frequency
-        plot_posterior_frequency(mcmc_res, net=network, nz=n_zone, burn_in=0.8, bg_map=True,
-                                 proj4=PROJ4_STRING,
-                                 geojson_map=GEOJSON_MAP_PATH, geo_json_river=GEOJSON_RIVER_PATH,
-                                 offset_factor=0.1)
-        
-        n_zone_file = 1
-        dics = {}
-        while True:
-            print("here")
-            try:
-                # Load the MCMC results
-                sample_path = TEST_ZONE_DIRECTORY + '/sa_contact_zones_nz' + str(n_zone_file) + '_' + str(run) + '.pkl'
-                samples = load_from(sample_path)
+    """
+
+    nz = 0
+    dics = {}
+    while True:
+
+        nz += 1
+        # print(nz)
+
+        try:
+            # Load the MCMC results
+            # sample_path = TEST_ZONE_DIRECTORY + 'number_zones_nz' + str(nz) + '_' + str(run) + '.pkl'
+            sample_path = f'{PATH_SA}{TEST_ZONE_DIRECTORY}sa_contact_zones_nz{nz}_{run}.pkl'
+            samples = load_from(sample_path)
+
+        except FileNotFoundError:
+            break
+
+
+        # Define output format
+        n_zones = samples['sample_zones'][0].shape[0]
+        # Define output format
+        mcmc_res = {'lh': [],
+                    'prior': [],
+                    'recall': [],
+                    'precision': [],
+                    'posterior': [],
+                    'zones': [[] for _ in range(n_zones)],
+                    'weights': [],
+                    'true_zones': [],
+                    'true_weights': [],
+                    'true_lh': []}
+
+        # True sample
+        # true_z = np.any(samples['true_zones'], axis=0)
+        # mcmc_res['true_zones'].append(true_z)
+        # mcmc_res['true_weights'] = transform_weights_from_log(samples['true_weights'])
+
+        # True likelihood
+        # mcmc_res['true_lh'] = samples['true_ll']
+        # true_posterior = samples['true_ll'] + samples['true_prior']
+
+        for t in range(len(samples['sample_zones'])):
+
+            # Zones
+            for z in range(n_zones):
+                mcmc_res['zones'][z].append(samples['sample_zones'][t][z])
+            mcmc_res['weights'].append(transform_weights_from_log(samples['sample_weights'][t]))
+
+            # Likelihood, prior and posterior
+            mcmc_res['lh'].append(samples['sample_likelihood'][t])
+            mcmc_res['prior'].append(samples['sample_prior'][t])
+
+            posterior = samples['sample_likelihood'][t] + samples['sample_prior'][t]
+            mcmc_res['posterior'].append(posterior)
+
+
+        dics[nz] = compute_dic(mcmc_res, 0.5)
+
+    # print(dics)
+
+    plot_dics(dics, 5, fname=f'{PLOT_PATH}DICs_all_{run}')
     
-            except FileNotFoundError:
-                break
+    plot_traces(
+        list_recall,
+        list_precision,
+        fname=f'{PLOT_PATH}traces_all_{run}'
+    )
+
+    # Plot posterior frequency
+    plot_posterior_frequency(mcmc_res, net=network, nz=n_zone, burn_in=0.8, bg_map=True,
+                             proj4=PROJ4_STRING,
+                             geojson_map=GEOJSON_MAP_PATH, geo_json_river=GEOJSON_RIVER_PATH,
+                             offset_factor=0.1)
     
-            # Define output format
-            n_zones = samples['sample_zones'][0].shape[0]
-    
-            # Define output format
-            mcmc_res_all = {'lh': []}
-    
-            for t in range(len(samples['sample_zones'])):
-                # Likelihood, prior and posterior
-                mcmc_res_all['lh'].append(samples['sample_likelihood'][t])
-    
-            dics[n_zone_file] = compute_dic(mcmc_res_all, 0.5)
-            n_zone_file += 1
-    
-        plot_dics(dics)
-    
-        """
+    n_zone_file = 1
+    dics = {}
+    while True:
+        print("here")
+        try:
+            # Load the MCMC results
+            sample_path = TEST_ZONE_DIRECTORY + '/sa_contact_zones_nz' + str(n_zone_file) + '_' + str(run) + '.pkl'
+            samples = load_from(sample_path)
+
+        except FileNotFoundError:
+            break
+
+        # Define output format
+        n_zones = samples['sample_zones'][0].shape[0]
+
+        # Define output format
+        mcmc_res_all = {'lh': []}
+
+        for t in range(len(samples['sample_zones'])):
+            # Likelihood, prior and posterior
+            mcmc_res_all['lh'].append(samples['sample_likelihood'][t])
+
+        dics[n_zone_file] = compute_dic(mcmc_res_all, 0.5)
+        n_zone_file += 1
+
+    plot_dics(dics)
+
+    """

@@ -6,7 +6,7 @@ if __name__ == '__main__':
     from src.postprocessing import compute_dic
     from src.plotting import plot_posterior_frequency, plot_trace_lh, plot_trace_recall_precision, \
         plot_zone_size_over_time, plot_dics, plot_correlation_weights, plot_histogram_weights, plot_correlation_p, \
-        plot_posterior_frequency_family1, plot_posterior_frequency_family2
+        plot_posterior_frequency_family, plot_minimum_spanning_tree
     import os
 
 
@@ -46,20 +46,33 @@ if __name__ == '__main__':
         network = compute_network(sites)
 
         # plot posterior frequency including family
-
-        plot_posterior_frequency_family2(
+        show_zone_bbox = True if inheritance == 1 else False
+        plot_posterior_frequency_family(
             mcmc_res,
             net = network,
             nz = -1,
             ts_low_frequency = ts_low_frequency,
             ts_posterior_freq = ts_posterior_freq,
             burn_in = burn_in,
-            show_zone_bbox = True,
+            show_zone_bbox = show_zone_bbox,
             show_axes = False,
             fname = f'{scenario_plot_path}posterior_frequency_family_i{inheritance}_{run}'
         )
 
 
+        # Plot minimum spanning tree
+        plot_minimum_spanning_tree(
+            mcmc_res,
+            network,
+            z = 1,
+            ts_posterior_freq = ts_posterior_freq,
+            burn_in = burn_in,
+            show_axes = False,
+            annotate = True,
+            fname = f'{scenario_plot_path}minimum spanning tree_i{inheritance}_{run}'
+        )
+
+        """
         # Plot trace of likelihood, recall and precision
         plot_trace_lh(
             mcmc_res,
@@ -82,3 +95,4 @@ if __name__ == '__main__':
             fname = f'{scenario_plot_path}zone_size_over_time_i{inheritance}_{run}'
         )
 
+        """

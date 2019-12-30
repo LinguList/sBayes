@@ -2,7 +2,7 @@ if __name__ == '__main__':
     from src.util import load_from, transform_weights_from_log
     from src.preprocessing import get_sites, compute_network
     from src.plotting import plot_trace_recall_precision, plot_trace_lh, \
-        plot_posterior_frequency, plot_dics, plot_posterior_frequency4, \
+        plot_posterior_frequency, plot_dics, \
         plot_zone_size_over_time
     from src.postprocessing import match_zones, compute_dic
     import numpy as np
@@ -102,13 +102,13 @@ if __name__ == '__main__':
         # subset=sites['subset']
 
         # Plot posterior frequency
-        plot_posterior_frequency4(
+        plot_posterior_frequency(
             mcmc_res,
             net=network,
             nz=1,
             ts_posterior_freq=ts_posterior_freq,
             burn_in=burn_in,
-            show_zone_bbox=True,
+            show_zone_bbox=False,
             show_axes=False,
             fname=f'{scenario_plot_path}posterior_frequency_pg{pg}_{run}'
         )

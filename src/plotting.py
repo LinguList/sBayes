@@ -18,6 +18,7 @@ from scipy.stats import gamma, linregress
 from scipy.spatial import Delaunay
 from scipy.sparse.csgraph import minimum_spanning_tree
 from matplotlib.collections import LineCollection
+from matplotlib.patches import Patch
 from matplotlib import cm
 from matplotlib.ticker import AutoMinorLocator
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
@@ -362,7 +363,7 @@ def add_posterior_frequency_points(ax, zones, locations, ts, cmap, norm, nz=-1, 
         # exclude burn-in
         end_bi = math.ceil(len(zones_reformatted) * burn_in)
         posterior_freq = (np.sum(zones_reformatted[end_bi:], axis=0, dtype=np.int32) / (n_samples - end_bi))
-        print('Points', np.sort(posterior_freq)[::-1][:5])
+        print('All Points', np.sort(posterior_freq)[::-1][:5])
 
 
     # plot only one zone (passed as argument)
@@ -545,8 +546,11 @@ def add_minimum_spanning_tree(ax, zone, locations, dist_mat, burn_in, ts_posteri
     cp_dist_mat = dist_mat[is_contact_point]
     cp_dist_mat = cp_dist_mat[:, is_contact_point]
 
-    # MST can only be computed if more than 2 contact points exist
-    if len(cp_locations) > 2:
+    n_contact_points = len(cp_locations)
+
+    # plot minimum spanning tree dependent on the number of contact points in zone
+    # plot normal minimum spanning for more than 3 points, else handle special cases
+    if n_contact_points > 3:
         # computing the minimum spanning tree of contact points
         cp_delaunay = compute_delaunay(cp_locations)
         cp_mst = minimum_spanning_tree(cp_delaunay.multiply(cp_dist_mat))
@@ -570,8 +574,37 @@ def add_minimum_spanning_tree(ax, zone, locations, dist_mat, burn_in, ts_posteri
 
                 # plotting color gradient line
                 colorline(ax, x, y, z=freq_gradient, cmap=cmap, norm=norm, linewidth=lw)
+    # compute delaunay only works for n points > 3 but mst can be computed for 3 and 2 points
+    elif n_contact_points == 3:
+        connected = []
+        dist_matrix = np.linalg.norm(cp_locations - cp_locations[:, None], axis=-1)
+        if dist_matrix[0,1] < dist_matrix[0,2]:
+            connected.append([0,1])
+            if dist_matrix[2,0] < dist_matrix[2,1]:
+                connected.append([2,0])
+            else:
+                connected.append([2,1])
+        else:
+            connected.append([0,2])
+            if dist_matrix[1,0] < dist_matrix[1,2]:
+                connected.append([1,0])
+            else:
+                connected.append([1,2])
+        for index in connected:
+            i1, i2 = index
+            # locations of the two contact points and their respective posterior frequencies
+            cp1_loc, cp2_loc = cp_locations[i1], cp_locations[i2]
+            cp1_freq, cp2_freq = cp_posterior_freq[i1], cp_posterior_freq[i2]
+
+            # computing color gradient between the two contact points
+            x = np.linspace(cp1_loc[0], cp2_loc[0], n_fragments)
+            y = np.linspace(cp1_loc[1], cp2_loc[1], n_fragments)
+            freq_gradient = np.linspace(cp1_freq, cp2_freq, n_fragments)
+
+            colorline(ax, x, y, z=freq_gradient, cmap=cmap, norm=norm, linewidth=lw)
+
     # for 2 contact points the two points are simply connected with a line
-    elif len(cp_locations) == 2:
+    elif n_contact_points == 2:
         # computing color gradient between the two contact points
         x = np.linspace(*cp_locations, n_fragments)
         y = np.linspace(*cp_locations, n_fragments)
@@ -579,12 +612,9 @@ def add_minimum_spanning_tree(ax, zone, locations, dist_mat, burn_in, ts_posteri
 
         colorline(ax, x, y, z=freq_gradient, cmap=cmap, norm=norm, linewidth=lw)
     # for 1 point don't do anything
-    elif len(cp_locations) == 1: pass
+    elif n_contact_points == 1: pass
     # if there aren't any contact points in the zone print a warning
     else:
-        # anno_opts = dict(xy=(0.5, 0.5), xycoords='axes fraction', fontsize=50, color='k', va='center', ha='center')
-        # ax.annotate(f'Fewer than 3 contact points!', **anno_opts)
-        # raise Exception(f'Cannot compute minimum spanning tree of network with size {len(cp_locations)}.')
         print('Warning: No points in contact zone!')
 
     order = np.argsort(cp_posterior_freq)
@@ -597,6 +627,9 @@ def add_minimum_spanning_tree(ax, zone, locations, dist_mat, burn_in, ts_posteri
     return extend_locations
 
 
+
+def add_family(ax, data):
+    pass
 
 def plot_posterior_frequency(mcmc_res, net, nz=-1, burn_in=0.2, show_zone_bbox=False, zone_bbox_offset=200,
                               ts_posterior_freq=0.7, ts_low_frequency=0.5, frame_offset=200, show_axes=True,
@@ -1000,11 +1033,10 @@ def plot_posterior_frequency_map(mcmc_res, net, nz=-1, burn_in=0.2, plot_family=
 
 
 def plot_posterior_frequency_map_new(mcmc_res, net, labels=False, families=False, family_names=False, nz=-1, burn_in=0.2,
-                            bg_map=False, proj4=None, geojson_map=None,
-                            geo_json_river=None,
-                            size=20, cmap=plt.cm.get_cmap('jet'),
-                            annotate_zones=False, fname='posterior_frequency', ts_low_frequency=0.5,
-                                     ts_posterior_freq=0.8, show_zone_bbox=False, zone_bbox_offset=1,
+                            bg_map=False, proj4=None, geojson_map=None, family_alpha_shape=0.00001,
+                            geo_json_river=None, extend_params=None,
+                            size=20, fname='posterior_frequency', ts_low_frequency=0.5,
+                            ts_posterior_freq=0.8, show_zone_bbox=False, zone_bbox_offset=1,
                                      show_axes=True):
     """ This function creates a scatter plot of all sites in the posterior distribution. The color of a site reflects
     its frequency in the posterior
@@ -1056,10 +1088,10 @@ def plot_posterior_frequency_map_new(mcmc_res, net, labels=False, families=False
         world.plot(ax=ax, color='w', edgecolor='black', zorder=-100000)
 
         if geo_json_river is not None:
-            pass
-            # rivers = gpd.read_file(geo_json_river)
-            # rivers = rivers.to_crs(proj4)
-            # rivers.plot(ax=ax, color=None, edgecolor="skyblue", zorder=-10000)
+
+            rivers = gpd.read_file(geo_json_river)
+            rivers = rivers.to_crs(proj4)
+            rivers.plot(ax=ax, color=None, edgecolor="skyblue", zorder=-10000)
 
 
     # adding scatter plot and corresponding colorbar legend
@@ -1068,7 +1100,8 @@ def plot_posterior_frequency_map_new(mcmc_res, net, labels=False, families=False
     add_posterior_frequency_legend(fig, cbar_axes, ts_low_frequency, cmap, norm, ts_posterior_freq, fontsize=pp['fontsize'])
 
     if nz == -1:
-        for zone in zones:
+        for i, zone in enumerate(zones):
+            print(f'Zone {i + 1}', end=' ')
             add_minimum_spanning_tree(ax, zone, locations, dist_mat, burn_in, ts_posterior_freq, cmap, norm, lw=1, size=size/2)
             continue
     else:
@@ -1080,16 +1113,14 @@ def plot_posterior_frequency_map_new(mcmc_res, net, labels=False, families=False
         leg_zone = add_zone_bbox(ax, zones, locations, net, nz, n_zones, burn_in, ts_posterior_freq, zone_bbox_offset)
 
     # styling the axes
-    lng_offsets = (1600000, 500000)
-    lat_offsets = (300000, 300000)
     limits = style_axes(
         ax,
         locations,
         None,
         show = False,
         fontsize = pp['fontsize'],
-        x_offsets = lng_offsets,
-        y_offsets = lat_offsets
+        x_offsets = extend_params['lng_offsets'],
+        y_offsets = extend_params['lat_offsets']
     )
 
     # add overview
@@ -1099,8 +1130,8 @@ def plot_posterior_frequency_map_new(mcmc_res, net, labels=False, families=False
         axins = inset_axes(ax, width=3.8, height=4, loc=3)
         axins.tick_params(labelleft=False, labelbottom=False, length=0)
 
-        axins.set_xlim([-4800000, 3900000])
-        axins.set_ylim([-3000000, 6200000])
+        axins.set_xlim(extend_params['lng_extend_overview'])
+        axins.set_ylim(extend_params['lat_extend_overview'])
 
         if proj4 is None and geojson_map is None:
             raise Exception('If you want to use a map provide a geojson and a crs')
@@ -1125,7 +1156,7 @@ def plot_posterior_frequency_map_new(mcmc_res, net, labels=False, families=False
         # bbox = mpl.patches.Rectangle((x_min, y_min), 1000, 1000)
         axins.add_patch(bbox)
 
-        axins.set_title('Overview study area', fontsize=pp['fontsize'])
+        # axins.set_title('Overview study area', fontsize=pp['fontsize'])
 
     # annotating languages
     if ('names' in net.keys()) and labels:
@@ -1134,16 +1165,21 @@ def plot_posterior_frequency_map_new(mcmc_res, net, labels=False, families=False
             if name in labels:
                 x, y = locations[i,:]
                 x += 20000; y += 10000
-                print(i, name)
+                # print(i, name)
                 anno_opts = dict(xy=(x, y), fontsize=14, color='k')
                 ax.annotate(name, **anno_opts)
                 # ax.scatter(*xy, s=50, color='green')
 
     if list(families) and list(family_names):
         family_colors = ['#377eb8', '#4daf4a', '#984ea3', '#a65628', '#f781bf', '#999999', '#ffff33', '#e41a1c', '#ff7f00']
+        family_colors = ['#b3e2cd', '#f1e2cc', '#cbd5e8', '#f4cae4', '#e6f5c9']
         family_leg = []
+
+        # handles for legend
+        handles = []
+
         for i, family in enumerate(family_names['external']):
-            print(i, family)
+            # print(i, family)
 
             # plot points belonging to family
             is_in_family = families[i] == 1
@@ -1152,25 +1188,45 @@ def plot_posterior_frequency_map_new(mcmc_res, net, labels=False, families=False
 
             # debugging stuff
             # print(f'Number of points in family {family_locations.shape}')
-            ax.scatter(*family_locations.T, s=size*5, c=family_color, alpha=1, linewidth=0, zorder=-1000, label=family)
+            ax.scatter(*family_locations.T, s=size*5, c=family_color, alpha=1, linewidth=0, zorder=0, label=family)
 
-            family_alpha_shape = 0.00001
             family_fill, family_border = family_color, family_color
-            alpha_shape = compute_alpha_shapes([is_in_family], net, family_alpha_shape)
 
-            # making sure that the polygon is not empty
-            if not alpha_shape.is_empty:
-                # print(len(is_in_family))
-                # print(is_in_family, net, alpha_shape)
-                print(alpha_shape)
-                print(type(alpha_shape))
-                print(alpha_shape.is_empty)
-                smooth_shape = alpha_shape.buffer(30000, resolution=16, cap_style=1, join_style=1, mitre_limit=5.0)
-                # smooth_shape = alpha_shape
-                patch = PolygonPatch(smooth_shape, fc=family_fill, ec=family_border, lw=1, ls='-', alpha=1, fill=True, zorder=-1)
-                leg_family = ax.add_patch(patch)
+            # language family has to have at least 3 members
+            if np.count_nonzero(is_in_family) > 3:
+                alpha_shape = compute_alpha_shapes([is_in_family], net, family_alpha_shape)
 
-    ax.legend(title='Language family', title_fontsize=pp['fontsize'], frameon=True, edgecolor='#ffffff', framealpha=1, fontsize=pp['fontsize'], loc='upper left', ncol=1, columnspacing=1)
+                # making sure that the polygon is not empty
+                if not alpha_shape.is_empty:
+                    # print(len(is_in_family))
+                    # print(is_in_family, net, alpha_shape)
+                    # print(alpha_shape)
+                    # print(type(alpha_shape))
+                    # print(alpha_shape.is_empty)
+                    smooth_shape = alpha_shape.buffer(30000, resolution=16, cap_style=1, join_style=1, mitre_limit=5.0)
+                    # smooth_shape = alpha_shape
+                    patch = PolygonPatch(smooth_shape, fc=family_fill, ec=family_border, lw=1, ls='-', alpha=1, fill=True, zorder=-1)
+                    leg_family = ax.add_patch(patch)
+
+
+            # adding legend handle
+            handle = Patch(facecolor=family_color, edgecolor=family_color, label=family)
+            handles.append(handle)
+
+    # ax.legend(title='Language family', title_fontsize=pp['fontsize'], frameon=True, edgecolor='#ffffff', framealpha=1, fontsize=pp['fontsize'], loc='upper left', ncol=1, columnspacing=1)
+    ax.legend(
+        handles = handles,
+        title = 'Language family',
+        title_fontsize = 22,
+        fontsize = 22,
+        frameon = True,
+        edgecolor = '#ffffff',
+        framealpha = 1,
+        loc = 'upper left',
+        ncol = 1,
+        columnspacing = 1
+    )
+
     # adding a legend to the plot
     if leg_zone:
         ax.legend((leg_zone,), ('Contact zone',), frameon=False, fontsize=pp['fontsize'], loc='upper right', ncol=1, columnspacing=1)
@@ -1538,7 +1594,7 @@ def compute_alpha_shapes(sites, net, alpha):
 
     all_sites = net['locations']
     points = all_sites[sites[0]]
-    print(points.shape)
+    # print(points.shape)
     tri = Delaunay(points, qhull_options="QJ Pp")
 
     edges = set()
@@ -1563,7 +1619,7 @@ def compute_alpha_shapes(sites, net, alpha):
         area = math.sqrt(s * (s - a) * (s - b) * (s - c))
         circum_r = a * b * c / (4.0 * area)
 
-        print(f'{circum_r} {1.0/alpha}')
+        # print(f'{circum_r} {1.0/alpha}')
         if circum_r < 1.0 / alpha:
             add_edge(edges, edge_nodes, points, ia, ib)
             add_edge(edges, edge_nodes, points, ib, ic)

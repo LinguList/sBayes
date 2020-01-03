@@ -10,6 +10,10 @@ if __name__ == '__main__':
     import numpy as np
     import os
 
+    import warnings
+
+    warnings.filterwarnings("ignore")
+
     PATH = '../../../../' # relative path to contact_zones_directory
     PATH_SA = f'{PATH}/src/experiments/south_america/'
 
@@ -25,16 +29,24 @@ if __name__ == '__main__':
     GEOJSON_MAP_PATH = f'{PATH_SA}data/map/ne_50m_land.geojson'
     GEOJSON_RIVER_PATH = f'{PATH_SA}data/map/ne_50m_rivers_lake_centerlines_scale_rank.geojson'
 
+    # parameters for area to be shown on the map and in overview of map
+    extend_params = {
+        'lng_offsets': (1600000, 500000),
+        'lat_offsets': (300000, 300000),
+        'lng_extend_overview': (-4800000, 3900000),
+        'lat_extend_overview': (-3000000, 6200000)
+    }
+
     # Zone, ease and number of runs
     n_zone = 3
     n_zone_file = 5
     run = 0
     n_zones = [1, 2, 3, 4, 5, 6, 7, 8]
-    n_zones = [3]
+    # n_zones = [8]
 
     # general parameters
-    ts_posterior_freq = 0.8
-    ts_lower_freq = 0.8
+    ts_posterior_freq = 0.7
+    ts_lower_freq = 0.5
     burn_in = 0.8
 
 
@@ -49,7 +61,7 @@ if __name__ == '__main__':
         sample_path = f'{PATH_SA}{TEST_ZONE_DIRECTORY}sa_contact_zones_nz{n_zone}_{run}.pkl'
 
         samples = load_from(sample_path)
-        print(samples.keys())
+        # print(samples.keys())
         # print(samples['sample_p_families'])
         n_zones = samples['sample_zones'][0].shape[0]
         n_families = samples['sample_p_families'][0].shape[0]
@@ -124,6 +136,7 @@ if __name__ == '__main__':
             labels = ['Arabela', 'Achuar', 'Tapiete', 'Chipaya'],
             families = families,
             family_names = family_names,
+            family_alpha_shape = 0.00001,
             nz=-1,
             burn_in=burn_in,
             ts_posterior_freq = ts_posterior_freq,
@@ -131,8 +144,40 @@ if __name__ == '__main__':
             proj4=PROJ4_STRING,
             geojson_map=GEOJSON_MAP_PATH,
             geo_json_river=GEOJSON_RIVER_PATH,
+            extend_params = extend_params,
             fname=f'{scenario_plot_path}sa_contact_zones_nz{n_zones}_{run}'
         )
+
+
+    n_zone_file = 1
+    dics = {}
+    while True:
+        try:
+            # Load the MCMC results
+            sample_path = f'{PATH_SA}{TEST_ZONE_DIRECTORY}sa_contact_zones_nz{n_zone_file}_{run}.pkl'
+            samples = load_from(sample_path)
+
+        except FileNotFoundError:
+            break
+
+        # Define output format
+        n_zones = samples['sample_zones'][0].shape[0]
+
+        # Define output format
+        mcmc_res_all = {'lh': []}
+
+        for t in range(len(samples['sample_zones'])):
+            # Likelihood, prior and posterior
+            mcmc_res_all['lh'].append(samples['sample_likelihood'][t])
+
+        dics[n_zone_file] = compute_dic(mcmc_res_all, 0.5)
+        n_zone_file += 1
+
+    plot_dics(dics, threshold=5, fname=f'{PLOT_PATH}contact_zones_DIC')
+
+
+
+
 
     """
 

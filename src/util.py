@@ -298,7 +298,7 @@ def read_languages_from_csv(file):
     for cat in cat_names:
         if cat == "":
             na_number = np.count_nonzero(np.where(features_with_cat == cat, 1, 0))
-            print(na_number, "NA value(s) found in the data.")
+            # print(na_number, "NA value(s) found in the data.")
         else:
             cat_axis = np.expand_dims(np.where(features_with_cat == cat, 1, 0), axis=2)
             features_cat.append(cat_axis)

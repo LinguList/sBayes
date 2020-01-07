@@ -1915,6 +1915,110 @@ def plot_trace_lh(mcmc_res, burn_in=0.2, true_lh=True, fname='trace_likelihood.p
     plt.close(fig)
 
 
+def plot_trace_lh_with_prior(mcmc_res, lh_range=None, prior_range=None, burn_in=0.2, fname='trace_likelihood.png'):
+    """
+    Function to plot the trace of the MCMC chains both in terms of likelihood and recall
+    Args:
+        mcmc_res (dict): the output from the MCMC neatly collected in a dict
+        burn_in: (float): First n% of samples are burn-in
+        true_lh (boolean): Visualize the true likelihood
+        fname (str): a path followed by a the name of the file
+    """
+    print(mcmc_res.keys())
+
+    pp = get_plotting_params()
+
+    plt.rcParams["axes.linewidth"] = pp['frame_width']
+
+    n_zones = len(mcmc_res['zones'])
+
+
+    fig, ax1 = plt.subplots(figsize=(pp['fig_width'], pp['fig_height']))
+
+    # create shared x axis
+    xmin, xmax, xstep = 0, 1000, 200
+    x = range(xmax - xmin)
+
+    ax1.set_xlim([xmin, xmax])
+    xticks = np.arange(xmin, xmax+xstep, xstep)
+    ax1.set_xticks(xticks)
+    ax1.set_xticklabels(xticks, fontsize=pp['fontsize'])
+
+    ax1.set_xlabel('Sample', fontsize=pp['fontsize'], fontweight='bold')
+
+    # create first y axis showing likelihood
+    color_lh = 'tab:red'
+    lh = mcmc_res['lh']
+    ax1.plot(x, lh, lw=pp['line_thickness'], color=color_lh, linestyle='-', label='Log-likelihood')
+
+
+    if lh_range is None:
+        y_min, y_max = min(lh), max(lh)
+
+        # round y min and y max to 100 up and down, respectively
+        n_digits = len(str(int(y_min))) - 1
+        convertor = 10 ** (n_digits - 3)
+        y_min_old, y_max_old = y_min, y_max
+        y_min = int(np.floor(y_min / convertor) * convertor)
+        y_max = int(np.ceil(y_max / convertor) * convertor)
+    else:
+        y_min, y_max = lh_range
+
+
+    ax1.set_ylim([y_min, y_max])
+    y_ticks = np.linspace(y_min, y_max, 6)
+    ax1.set_yticks(y_ticks)
+    yticklabels = [f'{y_tick:.0f}' for y_tick in y_ticks]
+    ax1.set_yticklabels(yticklabels, fontsize=pp['fontsize'], color=color_lh)
+
+    yaxis_label = 'Log-likelihood of simulated area'
+    if n_zones > 1:
+        yaxis_label += 's'
+    yaxis_label = 'Log-likelihood'
+    ax1.set_ylabel(yaxis_label, fontsize=pp['fontsize'], fontweight='bold', color=color_lh)
+
+
+
+
+    ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+    color_prior = 'tab:blue'
+    prior = mcmc_res['prior']
+    ax2.plot(x, prior, lw=pp['line_thickness'], color=color_prior, linestyle='-', label='Geo Prior')
+    yaxis_label = 'Geo Prior'
+    ax2.set_ylabel(yaxis_label, fontsize=pp['fontsize'], fontweight='bold', color=color_prior)
+
+    if prior_range is None:
+        prior_range = (min(prior), max(prior))
+    y_min, y_max = prior_range
+    ax2.set_ylim([y_min, y_max])
+    y_ticks = np.linspace(y_min, y_max, 6)
+    ax2.set_yticks(y_ticks)
+    yticklabels = [f'{y_tick:.0f}' for y_tick in y_ticks]
+    ax2.set_yticklabels(yticklabels, fontsize=pp['fontsize'], color=color_prior)
+
+
+
+
+    # add burn-in line and label
+    end_bi = math.ceil(len(x) * burn_in)
+    end_bi_label = math.ceil(len(x) * (burn_in - 0.03))
+
+    ax2.axvline(x=end_bi, lw=pp['line_thickness'], color=pp['color_burn_in'], linestyle='--')
+    ypos_label = y_min + (y_max - y_min) / 2
+    ax2.text(end_bi_label, ypos_label, 'Burn-in', rotation=90, size=pp['fontsize'], color=pp['color_burn_in'])
+
+    # ax1.legend(loc=4, prop={'size': pp['fontsize']}, frameon=False)
+    # ax1.legend([lh_handle, prior_handle])
+
+    # ask matplotlib for the plotted objects and their labels
+    lh_handle, lh_label = ax1.get_legend_handles_labels()
+    prior_handle, prior_label = ax2.get_legend_handles_labels()
+    ax2.legend(lh_handle + prior_handle, lh_label + prior_label, loc=4, prop={'size': pp['fontsize']}, frameon=False)
+
+    fig.savefig(f"{fname}.{pp['save_format']}", bbox_inches='tight', dpi=400, format=pp['save_format'])
+    plt.close(fig)
+
+
 
 def plot_histogram_weights(mcmc_res, feature):
     """

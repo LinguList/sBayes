@@ -2,7 +2,8 @@ if __name__ == '__main__':
     from src.util import load_from, transform_weights_from_log
     from src.preprocessing import get_sites, compute_network
     from src.plotting import plot_trace_recall_precision, plot_trace_lh, \
-        plot_posterior_frequency, plot_dics, plot_zone_size_over_time, plot_posterior_frequency
+        plot_posterior_frequency, plot_dics, plot_zone_size_over_time, plot_posterior_frequency, \
+        plot_trace_lh_with_prior
     from src.postprocessing import match_zones, compute_dic
     import numpy as np
     import os
@@ -92,6 +93,7 @@ if __name__ == '__main__':
         sites, site_names = get_sites(f'{PATH_SIMULATION}data/sites_simulation.csv')
         network = compute_network(sites=sites)
 
+        """
         # Plot posterior frequency
         plot_posterior_frequency(
             mcmc_res,
@@ -103,7 +105,7 @@ if __name__ == '__main__':
             show_axes=False,
             fname=f'{scenario_plot_path}posterior_frequency_pg{pg}_{run}'
         )
-
+        """
 
         # Plot trace of likelihood, recall and precision
         plot_trace_lh(
@@ -112,6 +114,16 @@ if __name__ == '__main__':
             true_lh=True,
             fname=f'{scenario_plot_path}trace_likelihood_pg{pg}_{run}'
         )
+
+        plot_trace_lh_with_prior(
+            mcmc_res,
+            lh_range = (-35060, -34760),
+            prior_range = (-140, 10),
+            burn_in=burn_in,
+            fname=f'{scenario_plot_path}trace_likelihood_with_prior_pg{pg}_{run}'
+        )
+
+
 
         plot_trace_recall_precision(
             mcmc_res,

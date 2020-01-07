@@ -3,7 +3,7 @@ if __name__ == '__main__':
     from src.preprocessing import get_sites, compute_network
     from src.plotting import plot_trace_recall_precision, plot_trace_lh, \
         plot_posterior_frequency, plot_dics, \
-        plot_zone_size_over_time
+        plot_zone_size_over_time, plot_trace_lh_with_prior
     from src.postprocessing import match_zones, compute_dic
     import numpy as np
     import os
@@ -120,6 +120,14 @@ if __name__ == '__main__':
             burn_in = burn_in,
             true_lh = True,
             fname = f'{scenario_plot_path}trace_likelihood_pg{pg}_{run}'
+        )
+
+        plot_trace_lh_with_prior(
+            mcmc_res,
+            lh_range = (-3200, -2600),
+            prior_range = (-9000, 1000),
+            burn_in=burn_in,
+            fname=f'{scenario_plot_path}trace_likelihood_with_prior_pg{pg}_{run}'
         )
 
         plot_trace_recall_precision(

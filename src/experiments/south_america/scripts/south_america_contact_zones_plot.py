@@ -2,10 +2,10 @@ if __name__ == '__main__':
     from src.util import load_from, transform_weights_from_log, transform_p_from_log, \
         read_languages_from_csv
     from src.preprocessing import compute_network
-    from src.postprocessing import compute_dic, match_zones
+    from src.postprocessing import compute_dic, match_zones, rank_zones
     from src.plotting import plot_posterior_frequency, plot_trace_lh, plot_trace_recall_precision, \
         plot_zone_size_over_time, plot_dics, plot_correlation_weights, plot_histogram_weights, plot_correlation_p, \
-        plot_posterior_frequency_map_new
+        plot_posterior_frequency_map_new, plot_mst_posterior_map
 
     import numpy as np
     import os
@@ -29,23 +29,17 @@ if __name__ == '__main__':
     GEOJSON_MAP_PATH = f'{PATH_SA}data/map/ne_50m_land.geojson'
     GEOJSON_RIVER_PATH = f'{PATH_SA}data/map/ne_50m_rivers_lake_centerlines_scale_rank.geojson'
 
-    # parameters for area to be shown on the map and in overview of map
-    extend_params = {
-        'lng_offsets': (1600000, 500000),
-        'lat_offsets': (300000, 300000),
-        'lng_extend_overview': (-4800000, 3900000),
-        'lat_extend_overview': (-3000000, 6200000)
-    }
+
 
     # Zone, ease and number of runs
     n_zone = 3
     n_zone_file = 5
     run = 0
     n_zones = [1, 2, 3, 4, 5, 6, 7, 8]
-    # n_zones = [8]
+    # n_zones = [5]
 
     # general parameters
-    ts_posterior_freq = 0.7
+    ts_posterior_freq = 0.6
     ts_lower_freq = 0.5
     burn_in = 0.8
 
@@ -120,19 +114,52 @@ if __name__ == '__main__':
         network = compute_network(sites)
 
         # Change order and rank
-        # mcmc_res = match_zones(mcmc_res)
-        # mcmc_res = rank_zones(mcmc_res, rank_by="lh", burn_in=0.8)
+        mcmc_res = match_zones(mcmc_res)
+        mcmc_res, p_per_zone = rank_zones(mcmc_res, rank_by="lh", burn_in=burn_in)
+        print(p_per_zone)
 
 
 
         # Compute the dic
         # dic = compute_dic(mcmc_res, burn_in=burn_in)
 
+        # parameters for area to be shown on the map and in overview of map
+        extend_params = {
+            'lng_offsets': (1600000, 500000),
+            'lat_offsets': (300000, 300000),
+            'lng_extend_overview': (-4800000, 3900000),
+            'lat_extend_overview': (-3000000, 6200000)
+        }
 
+
+        plot_mst_posterior_map(
+            mcmc_res,
+            sites,
+            labels=['Arabela', 'Achuar', 'Tapiete', 'Chipaya'],
+            families=families,
+            family_names=family_names,
+            family_alpha_shape=0.00001,
+            ts_posterior_freq=ts_posterior_freq,
+            lh = p_per_zone,
+            bg_map=True,
+            proj4=PROJ4_STRING,
+            geojson_map=GEOJSON_MAP_PATH,
+            geo_json_river=GEOJSON_RIVER_PATH,
+            burn_in=burn_in,
+            show_axes=False,
+            x_extend = (-3756000, 420000),
+            y_extend = (1100000, 3800000),
+            x_extend_overview = (-4800000, 3900000),
+            y_extend_overview = (-3000000, 6200000),
+            fname=f'{scenario_plot_path}mst_posterior_nz{n_zones}_{run}'
+        )
+
+
+    """
         # Plot posterior frequency
         plot_posterior_frequency_map_new(
             mcmc_res,
-            net=network,
+            network,
             labels = ['Arabela', 'Achuar', 'Tapiete', 'Chipaya'],
             families = families,
             family_names = family_names,
@@ -148,7 +175,7 @@ if __name__ == '__main__':
             fname=f'{scenario_plot_path}sa_contact_zones_nz{n_zones}_{run}'
         )
 
-
+    """
     n_zone_file = 1
     dics = {}
     while True:
@@ -177,9 +204,9 @@ if __name__ == '__main__':
 
 
 
-
-
     """
+
+    
 
     nz = 0
     dics = {}

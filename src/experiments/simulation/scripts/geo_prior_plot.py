@@ -3,7 +3,7 @@ if __name__ == '__main__':
     from src.preprocessing import get_sites, compute_network
     from src.plotting import plot_trace_recall_precision, plot_trace_lh, \
         plot_posterior_frequency, plot_dics, plot_zone_size_over_time, plot_posterior_frequency, \
-        plot_trace_lh_with_prior
+        plot_trace_lh_with_prior, plot_mst_posterior
     from src.postprocessing import match_zones, compute_dic
     import numpy as np
     import os
@@ -24,7 +24,7 @@ if __name__ == '__main__':
     run = 0
 
     # general parameters
-    ts_posterior_freq = 0.8
+    ts_posterior_freq = 0.6
     ts_lower_freq = 0.5
     burn_in = 0.2
 
@@ -107,6 +107,19 @@ if __name__ == '__main__':
         )
         """
 
+        plot_mst_posterior(
+            mcmc_res,
+            sites,
+            ts_posterior_freq=ts_posterior_freq,
+            burn_in=burn_in,
+            show_zone_boundaries = False,
+            show_axes = False,
+            frame_offset = None,
+            x_extend = (1450, 10000),
+            y_extend = (-200, 12700),
+            fname = f'{scenario_plot_path}mst_posterior_pg{pg}_{run}'
+        )
+
         # Plot trace of likelihood, recall and precision
         plot_trace_lh(
             mcmc_res,
@@ -120,6 +133,7 @@ if __name__ == '__main__':
             lh_range = (-35060, -34760),
             prior_range = (-140, 10),
             burn_in=burn_in,
+            labels = ('Log-likelihood', 'Geo prior'),
             fname=f'{scenario_plot_path}trace_likelihood_with_prior_pg{pg}_{run}'
         )
 

@@ -2,13 +2,17 @@ if __name__ == '__main__':
     from src.util import load_from, transform_weights_from_log, transform_p_from_log, \
         read_languages_from_csv
     from src.preprocessing import compute_network
-    from src.postprocessing import compute_dic, match_zones
+    from src.postprocessing import compute_dic, match_zones, rank_zones
     from src.plotting import plot_posterior_frequency, plot_trace_lh, plot_trace_recall_precision, \
         plot_zone_size_over_time, plot_dics, plot_correlation_weights, plot_histogram_weights, plot_correlation_p, \
-        plot_posterior_frequency_map_new
+        plot_posterior_frequency_map_new, plot_mst_posterior_map
 
     import numpy as np
     import os
+
+    import warnings
+
+    warnings.filterwarnings("ignore")
 
     PATH = '../../../../' # relative path to contact_zones_directory
     PATH_BK = f'{PATH}/src/experiments/balkan/'
@@ -21,7 +25,7 @@ if __name__ == '__main__':
     if not os.path.exists(PLOT_PATH): os.makedirs(PLOT_PATH)
 
     # MAP SETTINGS
-    PROJ4_STRING = '+proj=eqdc +lat_0=-32 +lon_0=-60 +lat_1=-5 +lat_2=-42 +x_0=0 +y_0=0 +ellps=aust_SA +units=m +no_defs '
+    PROJ4_STRING =  "+proj=lcc +lat_1=43 +lat_2=62 +lat_0=30 +lon_0=10 +x_0=0 +y_0=0 +ellps=intl +units=m +no_defs"
     GEOJSON_MAP_PATH = f'{PATH_BK}data/map/ne_50m_land.geojson'
     GEOJSON_RIVER_PATH = f'{PATH_BK}data/map/ne_50m_rivers_lake_centerlines_scale_rank.geojson'
 
@@ -35,11 +39,11 @@ if __name__ == '__main__':
 
     # Zone, ease and number of runs
     run = 0
-    # n_zones = [1, 2, 3, 4, 5, 6]
-    n_zones = [5]
+    n_zones = [1, 2, 3, 4, 5, 6]
+    # n_zones = [5]
 
     # general parameters
-    ts_posterior_freq = 0.8
+    ts_posterior_freq = 0.6
     ts_lower_freq = 0.8
     burn_in = 0.8
 
@@ -55,8 +59,6 @@ if __name__ == '__main__':
         sample_path = f'{PATH_BK}{TEST_ZONE_DIRECTORY}bk_prior_p_global_nz{n_zone}_{run}.pkl'
 
         samples = load_from(sample_path)
-        print(samples.keys())
-        print(samples['sample_p_families'])
         n_zones = samples['sample_zones'][0].shape[0]
         # n_families = samples['sample_p_families'][0].shape[0]
         n_families = 0
@@ -115,15 +117,35 @@ if __name__ == '__main__':
         network = compute_network(sites)
 
         # Change order and rank
-        # mcmc_res = match_zones(mcmc_res)
-        # mcmc_res = rank_zones(mcmc_res, rank_by="lh", burn_in=0.8)
+        mcmc_res = match_zones(mcmc_res)
+        mcmc_res, p_per_zone = rank_zones(mcmc_res, rank_by="lh", burn_in=0.8)
 
-
+        plot_mst_posterior_map(
+            mcmc_res,
+            sites,
+            labels=['Arabela', 'Achuar', 'Tapiete', 'Chipaya'],
+            families=families,
+            family_names=family_names,
+            family_alpha_shape=None,
+            ts_posterior_freq=ts_posterior_freq,
+            lh = p_per_zone,
+            bg_map=True,
+            proj4=PROJ4_STRING,
+            geojson_map=GEOJSON_MAP_PATH,
+            geo_json_river=GEOJSON_RIVER_PATH,
+            burn_in=burn_in,
+            show_axes=False,
+            x_extend = (-500000, 1700000),
+            y_extend = (600000, 2000000),
+            x_extend_overview = (-2000000, 2500000),
+            y_extend_overview = (400000, 4300000),
+            fname=f'{scenario_plot_path}mst_posterior_nz{n_zones}_{run}'
+        )
 
         # Compute the dic
         # dic = compute_dic(mcmc_res, burn_in=burn_in)
 
-
+    """
         # Plot posterior frequency
         plot_posterior_frequency_map_new(
             mcmc_res,
@@ -142,11 +164,10 @@ if __name__ == '__main__':
             extend_params = extend_params,
             fname=f'{scenario_plot_path}sa_contact_zones_nz{n_zones}_{run}'
         )
-
+    """
     n_zone_file = 1
     dics = {}
     while True:
-        print("here")
         try:
             # Load the MCMC results
             sample_path = f'{PATH_BK}{TEST_ZONE_DIRECTORY}bk_prior_p_global_nz{n_zone_file}_{run}.pkl'

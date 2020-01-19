@@ -3,8 +3,8 @@ if __name__ == '__main__':
     from src.preprocessing import get_sites, compute_network
     from src.plotting import plot_trace_recall_precision, plot_trace_lh, \
         plot_posterior_frequency, plot_dics, \
-        plot_zone_size_over_time, plot_trace_lh_with_prior
-    from src.postprocessing import match_zones, compute_dic
+        plot_zone_size_over_time, plot_trace_lh_with_prior, plot_mst_posterior
+    from src.postprocessing import match_zones, compute_dic, rank_zones
     import numpy as np
     import os
 
@@ -30,7 +30,7 @@ if __name__ == '__main__':
 
 
     # general parameters
-    ts_posterior_freq = 0.8
+    ts_posterior_freq = 0.1
     ts_lower_freq = 0.5
     burn_in = 0.4
 
@@ -99,8 +99,21 @@ if __name__ == '__main__':
         sites, site_names = get_sites(f'{PATH_SIMULATION}data/sites_simulation.csv',subset=True)
         # get_subset=True
         network = compute_network(sites)
-        # subset=sites['subset']
 
+        plot_mst_posterior(
+            mcmc_res,
+            sites,
+            subset = True,
+            ts_posterior_freq=ts_posterior_freq,
+            burn_in=burn_in,
+            show_zone_boundaries=False,
+            show_axes=False,
+            x_extend = (2510, 10000), # (1750, 10360)
+            y_extend = (700, 10000), # (400, 11950)
+            fname=f'{scenario_plot_path}mst_posterior_pg{pg}_{run}'
+        )
+        """
+        
         # Plot posterior frequency
         plot_posterior_frequency(
             mcmc_res,
@@ -112,8 +125,10 @@ if __name__ == '__main__':
             show_axes=False,
             fname=f'{scenario_plot_path}posterior_frequency_pg{pg}_{run}'
         )
+        
 
-        # Plot trace of likelihood, recall and precision
+
+        """
         # Plot trace of likelihood, recall and precision
         plot_trace_lh(
             mcmc_res,
@@ -127,6 +142,7 @@ if __name__ == '__main__':
             lh_range = (-3200, -2600),
             prior_range = (-9000, 1000),
             burn_in=burn_in,
+            labels = ('Log-likelihood', 'Prior p global'),
             fname=f'{scenario_plot_path}trace_likelihood_with_prior_pg{pg}_{run}'
         )
 

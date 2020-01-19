@@ -12,13 +12,15 @@ plt.tight_layout()
 import numpy as np
 import math
 
-from src.util import zones_autosimilarity, add_edge, compute_delaunay, colorline
+from src.util import zones_autosimilarity, add_edge, compute_delaunay, colorline, compute_mst_posterior
 from src.util import bounding_box, round_int, linear_rescale, round_single_int, round_multiple_ints
+from src.preprocessing import compute_network
 from scipy.stats import gamma, linregress
 from scipy.spatial import Delaunay
 from scipy.sparse.csgraph import minimum_spanning_tree
 from matplotlib.collections import LineCollection
 from matplotlib.patches import Patch
+from matplotlib.lines import Line2D
 from matplotlib import cm
 from matplotlib.ticker import AutoMinorLocator
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
@@ -27,7 +29,9 @@ from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 from shapely.ops import cascaded_union, polygonize
 from shapely import geometry
 from descartes import PolygonPatch
+from copy import deepcopy
 import geopandas as gpd
+from decimal import Decimal
 import os
 os.environ["PROJ_LIB"] = "C:/Users/ranacher/Anaconda3/Library/share"
 
@@ -280,13 +284,14 @@ def plot_zones(zones, net, ax=None):
 # helper functions for posterior frequency plotting functions (vanilla, family and map)
 def get_plotting_params():
     return {
-        'fig_width': 15,
+        'fig_width': 20,
         'fig_height': 10,
         'fontsize': 22, # overall fontsize value
         'line_thickness': 2, # thickness of lines in plots
         'frame_width': 1.5, # width of frame of plots
         'color_burn_in': 'grey', # color of burn in line and text
-        'save_format': 'pdf' # output format for plots
+        'save_format': 'svg', # output format for plots
+        'n_fragments': 100, # number of fragments for minimum spanning tree edges
     }
 def get_cmap(ts_lf, name='YlOrRd', lower_ts=0.2):
 
@@ -363,7 +368,7 @@ def add_posterior_frequency_points(ax, zones, locations, ts, cmap, norm, nz=-1, 
         # exclude burn-in
         end_bi = math.ceil(len(zones_reformatted) * burn_in)
         posterior_freq = (np.sum(zones_reformatted[end_bi:], axis=0, dtype=np.int32) / (n_samples - end_bi))
-        print('All Points', np.sort(posterior_freq)[::-1][:5])
+        # print('All Points', np.sort(posterior_freq)[::-1][:5])
 
 
     # plot only one zone (passed as argument)
@@ -377,7 +382,7 @@ def add_posterior_frequency_points(ax, zones, locations, ts, cmap, norm, nz=-1, 
 
         # compute frequency of each point in that zone
         posterior_freq = (np.sum(zone[end_bi:], axis=0, dtype=np.int32) / (n_samples - end_bi))
-        print(np.sort(posterior_freq)[::-1][:10])
+        # print(np.sort(posterior_freq)[::-1][:10])
 
 
     # plotting all low posterior frequency (lf) points (posterior frequency < ts_cmap)
@@ -463,27 +468,55 @@ def add_zone_bbox(ax, zones, locations, net, nz, n_zones, burn_in, ts_posterior_
 
     return leg_zone
 
-def style_axes(ax, locations, offset, show=True, fontsize=22, x_offsets=False, y_offsets=False):
+def add_zone_boundary(ax, locations, net, is_in_zone, alpha, annotation=None, color='#000000'):
 
+    # use form plotting param
+    fontsize = 18
+    color_zones = '#000000'
+
+    cp_locations = locations[is_in_zone, :]
+
+    leg_zone = None
+    if cp_locations.shape[0] > 0: # at least one contact point in zone
+
+
+        alpha_shape = compute_alpha_shapes([is_in_zone], net, alpha)
+
+        # smooth_shape = alpha_shape.buffer(100, resolution=16, cap_style=1, join_style=1, mitre_limit=5.0)
+        smooth_shape = alpha_shape.buffer(160, resolution=16, cap_style=1, join_style=1, mitre_limit=10.0)
+        # smooth_shape = alpha_shape
+        patch = PolygonPatch(smooth_shape, ec=color, lw=1, ls='-', alpha=1, fill=False,
+                             zorder=1)
+        leg_zone = ax.add_patch(patch)
+    else:
+        print('computation of bbox not possible because no contact points')
+
+    # only adding a label (numeric) if annotation turned on and more than one zone
+    if annotation is not None:
+        x_coords, y_coords = cp_locations.T
+        x, y = np.mean(x_coords), np.mean(y_coords)
+        ax.text(x, y, annotation, fontsize=fontsize, color=color)
+
+    return leg_zone
+
+def style_axes(ax, locations, show=True, offset=None, x_extend=None, y_extend=None):
+
+    pp = get_plotting_params()
     # getting axes ranges and rounding them
     x_min, x_max = np.min(locations[:,0]), np.max(locations[:,0])
     y_min, y_max = np.min(locations[:,1]), np.max(locations[:,1])
-    # print(f'x min {x_min}, x_max {x_max}')
-    # print(f'y min {y_min}, y_max {y_max}')
 
     # if specific offsets were passes use them, otherwise use same offset for all
-    if not x_offsets and not y_offsets:
+    if offset is not None:
         x_min, x_max = round_int(x_min, 'down', offset), round_int(x_max, 'up', offset)
         y_min, y_max = round_int(y_min, 'down', offset), round_int(y_max, 'up', offset)
+    elif x_extend is not None and y_extend is not None:
+        x_min, x_max = x_extend
+        y_min, y_max = y_extend
     else:
-        x_min = x_min - x_offsets[0]
-        x_max = x_max + x_offsets[1]
-        y_min = y_min - y_offsets[0]
-        y_max = y_max + y_offsets[1]
-
-
-    # print(f'x min {x_min}, x_max {x_max}')
-    # print(f'y min {y_min}, y_max {y_max}')
+        x_coords, y_coords = locations.T
+        x_min, x_max = min(x_coords), max(x_coords)
+        y_min, y_max = min(y_coords), max(y_coords)
 
     # setting axes limits
     ax.set_xlim([x_min, x_max])
@@ -493,13 +526,13 @@ def style_axes(ax, locations, offset, show=True, fontsize=22, x_offsets=False, y
     x_step = (x_max - x_min) // 5
     x_ticks = np.arange(x_min, x_max+x_step, x_step) if show else []
     ax.set_xticks(x_ticks)
-    ax.set_xticklabels(x_ticks, fontsize=fontsize)
+    ax.set_xticklabels(x_ticks, fontsize=pp['fontsize'])
 
     # y axis
     y_step = (y_max - y_min) // 5
     y_ticks = np.arange(y_min, y_max+y_step, y_step) if show else []
     ax.set_yticks(y_ticks)
-    ax.set_yticklabels(y_ticks, fontsize=fontsize)
+    ax.set_yticklabels(y_ticks, fontsize=pp['fontsize'])
 
     return (x_min, x_max, y_min, y_max)
 
@@ -625,6 +658,117 @@ def add_minimum_spanning_tree(ax, zone, locations, dist_mat, burn_in, ts_posteri
     extend_locations = cp_locations if len(cp_locations) > 3 else locations
 
     return extend_locations
+
+def add_minimum_spanning_tree_new(ax, zone, locations, dist_mat, burn_in, ts_posterior_freq, size=25, color='#ff0000'):
+
+
+    # exclude burn-in
+    end_bi = math.ceil(len(zone) * burn_in)
+    zone = zone[end_bi:]
+
+    # get number of samples (excluding burn-in) and number of points
+    n_samples = len(zone)
+    n_points = len(locations)
+
+    # container to count edge weight for mst
+    mst_posterior_freq = np.zeros((n_points, n_points), np.float64)
+
+    # container for points in contact zone
+    points_posterior_freq = np.zeros((n_points,), np.float64)
+
+    # compute mst for each sample and update mst posterior
+    for sample in zone:
+
+        points_posterior_freq = points_posterior_freq + sample
+
+        # getting indices of contact points
+        cp_indices = np.argwhere(sample)
+
+        # subsetting to contact points
+        cp_locations = locations[sample, :]
+        cp_dist_mat = dist_mat[sample, :][:,sample]
+        n_contact_points = len(cp_locations)
+
+        if n_contact_points > 3:
+            # computing the minimum spanning tree of contact points
+            cp_delaunay = compute_delaunay(cp_locations)
+            cp_mst = minimum_spanning_tree(cp_delaunay.multiply(cp_dist_mat))
+
+            # converting minimum spanning tree to boolean array denoting whether contact points are connected
+            cp_mst = cp_mst.toarray()
+            cp_connections = cp_mst > 0
+
+            for index, connected in np.ndenumerate(cp_connections):
+                if connected:
+                    # getting indices of contact points
+                    i1, i2 = cp_indices[index[0]], cp_indices[index[1]]
+                    mst_posterior_freq[i1, i2] = mst_posterior_freq[i1, i2] + 1
+                    mst_posterior_freq[i2, i1] = mst_posterior_freq[i2, i1] + 1
+
+        # compute delaunay only works for n points > 3 but mst can be computed for 3 and 2 points
+        elif n_contact_points == 3:
+            connected = []
+            dist_matrix = np.linalg.norm(cp_locations - cp_locations[:, None], axis=-1)
+            if dist_matrix[0,1] < dist_matrix[0,2]:
+                connected.append([0,1])
+                if dist_matrix[2,0] < dist_matrix[2,1]:
+                    connected.append([2,0])
+                else:
+                    connected.append([2,1])
+            else:
+                connected.append([0,2])
+                if dist_matrix[1,0] < dist_matrix[1,2]:
+                    connected.append([1,0])
+                else:
+                    connected.append([1,2])
+            # replace indices from subset with indice from all points
+            # print(cp_indices)
+            # connected = [[cp_indices[i][0], cp_indices[j][0]] for i, j in connected]
+            for i, j in connected:
+                i, j = cp_indices[i][0], cp_indices[j][0]
+                mst_posterior_freq[i, j] = mst_posterior_freq[i, j] + 1
+                mst_posterior_freq[j, i] = mst_posterior_freq[j, i] + 1
+
+            # print(connected)
+
+
+        # for 2 contact points the two points are simply connected with a line
+        elif n_contact_points == 2:
+            print(cp_indices)
+        # for 1 point don't do anything
+        elif n_contact_points == 1: pass
+        # if there aren't any contact points in the zone print a warning
+        else:
+            print('Warning: No points in contact zone!')
+        # end of populating mst posterior
+
+    # converting absolute counts to frequencies
+    mst_posterior_freq = mst_posterior_freq / n_samples
+    points_posterior_freq = points_posterior_freq / n_samples
+
+    # factor for sizes
+    size_factor = 4
+
+    for index, freq in np.ndenumerate(mst_posterior_freq):
+        if freq >= ts_posterior_freq:
+
+            # compute line width
+            min_lw = size / 100
+            freq_norm = (freq - ts_posterior_freq) / (1 - ts_posterior_freq)
+            lw = min_lw + freq_norm * size_factor
+
+            # getting locations of the two contact points and plotting line
+            locs = locations[[*index]]
+            ax.plot(*locs.T, color=color, lw=lw)
+
+    # getting boolean array of points in minimum spanning tree
+    is_in_mst = points_posterior_freq > ts_posterior_freq
+
+    # plotting points of minimum spanning tree
+    cp_locations = locations[is_in_mst, :]
+    ax.scatter(*cp_locations.T, s=size * size_factor, c=color)
+
+    return is_in_mst
 
 
 
@@ -1030,6 +1174,318 @@ def plot_posterior_frequency_map(mcmc_res, net, nz=-1, burn_in=0.2, plot_family=
 
     fig.savefig(fname, bbox_inches='tight', dpi=400)
     # plt.show()
+
+
+def plot_mst_posterior(mcmc_res, sites, subset=False, burn_in=0.2, show_zone_boundaries=False, x_extend=None,
+                       y_extend=None, ts_posterior_freq=0.6, frame_offset=None,
+                       show_axes=True, size=25, fname='mst_posterior'):
+    """ This function creates a scatter plot of all sites in the posterior distribution. The color of a site reflects
+    its frequency in the posterior
+
+    Args:
+        mcmc_res (dict): the output from the MCMC neatly collected in a dict
+        net (dict): The full network containing all sites.
+        nz (int): For multiple zones: which zone should be plotted? If -1, plot all.
+        burn_in (float): Percentage of first samples which is discarded as burn-in
+        show_zone_bbox (boolean): Adds box(es) with annotation to zone(s)
+        ts_posterior_freq (float): If zones are annotated this threshold
+        size (int): size of points
+        cmap (matplotlib.cm): colormap for posterior frequency of points
+        fname (str): a path followed by a the name of the file
+    """
+
+
+    # gemeral plotting parameters
+    pp = get_plotting_params()
+
+    plt.rcParams["axes.linewidth"] = pp['frame_width']
+    fig, ax = plt.subplots(figsize=(pp['fig_width'], pp['fig_height']), constrained_layout=True)
+
+    # getting zones data from mcmc results
+    zones = mcmc_res['zones']
+
+    # computing network and getting locations and distance matrix
+    if subset:
+        # subsetting the sites
+        is_in_subset = sites['subset']
+        sites_all = deepcopy(sites)
+
+        for key in sites.keys():
+            if type(sites[key]) == list:
+                sites[key] = list(np.array(sites[key])[is_in_subset])
+            else:
+                sites[key] = sites[key][is_in_subset,:]
+
+    net = compute_network(sites)
+    locations, dist_mat = net['locations'], net['dist_mat']
+
+    # plotting all points
+    cmap, _ = get_cmap(0.5, name='YlOrRd', lower_ts=1.2)
+    ax.scatter(*locations.T, s=size, c=[cmap(0)], alpha=1, linewidth=0)
+    if subset:
+        # plot all points not in the subset
+        not_in_subset = np.logical_not(is_in_subset)
+        other_locations = sites_all['locations'][not_in_subset]
+        ax.scatter(*other_locations.T, s=size, c=[cmap(0)], alpha=1, linewidth=0)
+
+        # add boundary of subset to plot
+        x_coords, y_coords = locations.T
+        offset = 100
+        x_min, x_max = min(x_coords) - offset, max(x_coords) + offset
+        y_min, y_max = min(y_coords) - offset, max(y_coords) + offset
+        bbox_width = x_max - x_min
+        bbox_height = y_max - y_min
+        bbox = mpl.patches.Rectangle((x_min, y_min), bbox_width, bbox_height, ec='k', fill=False, linestyle='-')
+        ax.add_patch(bbox)
+        ax.text(x_max, y_max, 'Subset', fontsize=18, color='#000000')
+
+    # plotting minimum spanningtree for each zone
+    leg_zone = None
+    for i, zone in enumerate(zones):
+
+        zone_colors = ['#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02', '#a6761d', '#666666']
+        flamingo_color = '#F48AA7'
+        c = flamingo_color if len(zones) == 1 else zone_colors[i]
+        is_in_zone = add_minimum_spanning_tree_new(ax, zone, locations, dist_mat, burn_in, ts_posterior_freq, size=size, color=c)
+
+        if show_zone_boundaries:
+            ann = f'$simulated \, Z_{i + 1}$' if len(zones) > 1 else f'$simulated \, z$'
+            leg_zone = add_zone_boundary(ax, locations, net, is_in_zone, alpha=0.0002, annotation=ann, color='#000000')
+
+    # styling the axes
+    style_axes(ax, locations, show=show_axes, offset=frame_offset, x_extend=x_extend, y_extend=y_extend)
+
+    # adding a legend to the plot
+    if leg_zone is not None:
+        ax.legend((leg_zone,), ('Contact zone',), frameon=False, fontsize=pp['fontsize'], loc='upper right', ncol=1, columnspacing=1)
+
+    fig.savefig(f"{fname}.{pp['save_format']}", bbox_inches='tight', dpi=400, format=pp['save_format'])
+    plt.close(fig)
+
+    # if zone boundaries is on we also create a zoomed in plot for each contact zone
+    if show_zone_boundaries:
+        x_min, x_max = ax.get_xlim()
+        print(x_min, x_max)
+        y_min, y_max = ax.get_ylim()
+        print(y_min, y_max)
+
+        for i, zone in enumerate(zones):
+
+            # first we compute the extend of the contact zone to compute the figure width height ration
+            locations_zone = locations[is_in_zone, :]
+            x_coords, y_coords = locations_zone.T
+            offset = 0
+            x_extend = (min(x_coords) - offset, max(x_coords) + offset)
+            y_extend = (min(y_coords) - offset, max(y_coords) + offset)
+            print(x_extend)
+            print(y_extend)
+
+            # compute width and height of zoomed in figure
+            width_ratio = 1. / (x_max - x_min) * (x_extend[1] - x_extend[0])
+            height_ratio = 1. / (y_max - y_min) * (y_extend[1] - y_extend[0])
+            print(width_ratio, height_ratio)
+
+            fig_size_factor = 6
+            fig_width = width_ratio * pp['fig_width'] * fig_size_factor
+            fig_height = height_ratio * pp['fig_height'] * fig_size_factor
+            print(fig_width, fig_height)
+
+            fig, ax_zone = plt.subplots(figsize=(fig_width, fig_height), constrained_layout=True)
+            size_factor = 5
+
+            ax_zone.scatter(*locations.T, s=size*size_factor, c=[cmap(0)], alpha=1, linewidth=0)
+
+            zone_colors = ['#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02', '#a6761d', '#666666']
+            flamingo_color = '#F48AA7'
+            c = flamingo_color if len(zones) == 1 else zone_colors[i]
+            is_in_zone = add_minimum_spanning_tree_new(ax_zone, zone, locations, dist_mat, burn_in, ts_posterior_freq,
+                                                       size=size*size_factor, color=c)
+            add_zone_boundary(ax_zone, locations, net, is_in_zone, alpha=0.0002, color='#000000')
+
+
+            style_axes(ax_zone, locations, show=show_axes, x_extend=x_extend, y_extend=y_extend)
+
+            ax_zone.set_xlim(x_extend)
+            ax_zone.set_ylim(y_extend)
+
+            fig.savefig(f"{fname}_z{i + 1}.{pp['save_format']}", bbox_inches='tight', dpi=400, format=pp['save_format'])
+            plt.close(fig)
+
+def plot_mst_posterior_map(mcmc_res, sites, burn_in=0.2, x_extend=None,
+                       y_extend=None, ts_posterior_freq=0.6, lh=None, frame_offset=None,
+                       show_axes=True, size=25, labels=False, families=False, family_names=False,
+                        bg_map=False, proj4=None, geojson_map=None, family_alpha_shape=None,
+                        geo_json_river=None,
+                        x_extend_overview=None, y_extend_overview=None, fname='mst_posterior'):
+    """ This function creates a scatter plot of all sites in the posterior distribution. The color of a site reflects
+    its frequency in the posterior
+
+    Args:
+        mcmc_res (dict): the output from the MCMC neatly collected in a dict
+        net (dict): The full network containing all sites.
+        nz (int): For multiple zones: which zone should be plotted? If -1, plot all.
+        burn_in (float): Percentage of first samples which is discarded as burn-in
+        show_zone_bbox (boolean): Adds box(es) with annotation to zone(s)
+        ts_posterior_freq (float): If zones are annotated this threshold
+        size (int): size of points
+        cmap (matplotlib.cm): colormap for posterior frequency of points
+        fname (str): a path followed by a the name of the file
+    """
+
+
+    # gemeral plotting parameters
+    pp = get_plotting_params()
+
+    plt.rcParams["axes.linewidth"] = pp['frame_width']
+    fig, ax = plt.subplots(figsize=(pp['fig_width'], pp['fig_height']), constrained_layout=True)
+
+    if bg_map:
+        if proj4 is None and geojson_map is None:
+            raise Exception('If you want to use a map provide a geojson and a crs')
+
+        world = gpd.read_file(geojson_map)
+        world = world.to_crs(proj4)
+        world.plot(ax=ax, color='w', edgecolor='black', zorder=-100000)
+
+        if geo_json_river is not None:
+
+            rivers = gpd.read_file(geo_json_river)
+            rivers = rivers.to_crs(proj4)
+            rivers.plot(ax=ax, color=None, edgecolor="skyblue", zorder=-10000)
+
+
+    # getting zones data from mcmc results
+    zones = mcmc_res['zones']
+
+    net = compute_network(sites)
+    locations, dist_mat = net['locations'], net['dist_mat']
+
+    # plotting all points
+    cmap, _ = get_cmap(0.5, name='YlOrRd', lower_ts=1.2)
+    ax.scatter(*locations.T, s=size, c=[cmap(0)], alpha=1, linewidth=0)
+
+    # plotting minimum spanningtree for each zone
+    leg_zones = []
+    for i, zone in enumerate(zones):
+
+        zone_colors = ['#1b9e77', '#d95f02', '#7570b3', '#e7298a', '#66a61e', '#e6ab02', '#a6761d', '#666666']
+        flamingo_color = '#F48AA7'
+        c = flamingo_color if len(zones) == 1 else zone_colors[i]
+        is_in_zone = add_minimum_spanning_tree_new(ax, zone, locations, dist_mat, burn_in, ts_posterior_freq, size=size, color=c)
+        line = Line2D([0], [0], color=c, lw=6, linestyle='-')
+        leg_zones.append(line)
+
+    # add overview
+    add_overview = True
+    if add_overview:
+
+        axins = inset_axes(ax, width=3.8, height=4, loc=3)
+        axins.tick_params(labelleft=False, labelbottom=False, length=0)
+
+        axins.set_xlim(x_extend_overview)
+        axins.set_ylim(y_extend_overview)
+
+        if proj4 is None and geojson_map is None:
+            raise Exception('If you want to use a map provide a geojson and a crs')
+
+        world = gpd.read_file(geojson_map)
+        world = world.to_crs(proj4)
+        world.plot(ax=axins, color='w', edgecolor='black', zorder=-100000)
+
+        axins.scatter(*locations.T, s=size/2, c=[cmap(0)], alpha=1, linewidth=0)
+        # add_posterior_frequency_points(axins, zones, locations, ts_low_frequency, cmap, norm, nz=nz, burn_in=burn_in, size=size/2)
+
+
+        # add bounding box of plot
+        bbox_width = x_extend[1] - x_extend[0]
+        bbox_height = y_extend[1] - y_extend[0]
+        bbox = mpl.patches.Rectangle((x_extend[0], y_extend[0]), bbox_width, bbox_height, ec='k', fill=False, linestyle='-')
+        axins.add_patch(bbox)
+
+    if list(families) and list(family_names):
+        family_colors = ['#377eb8', '#4daf4a', '#984ea3', '#a65628', '#f781bf', '#999999', '#ffff33', '#e41a1c', '#ff7f00']
+        family_colors = ['#b3e2cd', '#f1e2cc', '#cbd5e8', '#f4cae4', '#e6f5c9']
+        family_leg = []
+
+        # handles for legend
+        handles = []
+
+        for i, family in enumerate(family_names['external']):
+            # print(i, family)
+
+            # plot points belonging to family
+            is_in_family = families[i] == 1
+            family_locations = locations[is_in_family,:]
+            family_color = family_colors[i]
+
+            # debugging stuff
+            # print(f'Number of points in family {family_locations.shape}')
+            ax.scatter(*family_locations.T, s=size*15, c=family_color, alpha=1, linewidth=0, zorder=-i, label=family)
+
+            family_fill, family_border = family_color, family_color
+
+            # language family has to have at least 3 members
+            if family_alpha_shape is not None and np.count_nonzero(is_in_family) > 3:
+                alpha_shape = compute_alpha_shapes([is_in_family], net, family_alpha_shape)
+
+                # making sure that the polygon is not empty
+                if not alpha_shape.is_empty:
+                    smooth_shape = alpha_shape.buffer(40000, resolution=16, cap_style=1, join_style=1, mitre_limit=5.0)
+                    patch = PolygonPatch(smooth_shape, fc=family_fill, ec=family_border, lw=1, ls='-', alpha=1, fill=True, zorder=-i)
+                    leg_family = ax.add_patch(patch)
+
+
+            # adding legend handle
+            handle = Patch(facecolor=family_color, edgecolor=family_color, label=family)
+            handles.append(handle)
+
+    # ax.legend(title='Language family', title_fontsize=pp['fontsize'], frameon=True, edgecolor='#ffffff', framealpha=1, fontsize=pp['fontsize'], loc='upper left', ncol=1, columnspacing=1)
+    legend_families = ax.legend(
+        handles = handles,
+        title = 'Language family',
+        title_fontsize = 18,
+        fontsize = 18,
+        frameon = True,
+        edgecolor = '#ffffff',
+        framealpha = 1,
+        ncol = 1,
+        columnspacing = 1,
+        loc = 'upper left',
+        bbox_to_anchor = (0, 0.965)
+    )
+    ax.add_artist(legend_families)
+
+    # adding a legend to the plot
+    zone_labels = []
+    for i, exp in enumerate(lh):
+        lh_value = np.exp(exp)
+        # print(lh_value)
+        lh_value = f"{Decimal(lh_value):.2E}"
+        zone_labels.append(f'$Z_{i + 1} \, {lh_value}$')
+
+    legend_zones = ax.legend(
+        leg_zones,
+        zone_labels,
+        title_fontsize=18,
+        title='Contact zone',
+        frameon=True,
+        edgecolor='#ffffff',
+        framealpha=1,
+        fontsize=18,
+        ncol=1,
+        columnspacing=1,
+        loc='upper left',
+        bbox_to_anchor=(0, 0.7)
+    )
+    ax.add_artist(legend_zones)
+
+    # styling the axes
+    style_axes(ax, locations, show=show_axes, offset=frame_offset, x_extend=x_extend, y_extend=y_extend)
+
+    fig.savefig(f"{fname}.{pp['save_format']}", bbox_inches='tight', dpi=400, format=pp['save_format'])
+    plt.close(fig)
+
+
 
 
 def plot_posterior_frequency_map_new(mcmc_res, net, labels=False, families=False, family_names=False, nz=-1, burn_in=0.2,
@@ -1915,7 +2371,7 @@ def plot_trace_lh(mcmc_res, burn_in=0.2, true_lh=True, fname='trace_likelihood.p
     plt.close(fig)
 
 
-def plot_trace_lh_with_prior(mcmc_res, lh_range=None, prior_range=None, burn_in=0.2, fname='trace_likelihood.png'):
+def plot_trace_lh_with_prior(mcmc_res,  burn_in=0.2, lh_range=None, prior_range=None, labels=None, fname='trace_likelihood'):
     """
     Function to plot the trace of the MCMC chains both in terms of likelihood and recall
     Args:
@@ -1924,7 +2380,6 @@ def plot_trace_lh_with_prior(mcmc_res, lh_range=None, prior_range=None, burn_in=
         true_lh (boolean): Visualize the true likelihood
         fname (str): a path followed by a the name of the file
     """
-    print(mcmc_res.keys())
 
     pp = get_plotting_params()
 
@@ -1949,7 +2404,7 @@ def plot_trace_lh_with_prior(mcmc_res, lh_range=None, prior_range=None, burn_in=
     # create first y axis showing likelihood
     color_lh = 'tab:red'
     lh = mcmc_res['lh']
-    ax1.plot(x, lh, lw=pp['line_thickness'], color=color_lh, linestyle='-', label='Log-likelihood')
+    ax1.plot(x, lh, lw=pp['line_thickness'], color=color_lh, linestyle='-', label=labels[0])
 
 
     if lh_range is None:
@@ -1983,8 +2438,8 @@ def plot_trace_lh_with_prior(mcmc_res, lh_range=None, prior_range=None, burn_in=
     ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
     color_prior = 'tab:blue'
     prior = mcmc_res['prior']
-    ax2.plot(x, prior, lw=pp['line_thickness'], color=color_prior, linestyle='-', label='Geo Prior')
-    yaxis_label = 'Geo Prior'
+    ax2.plot(x, prior, lw=pp['line_thickness'], color=color_prior, linestyle='-', label=labels[1])
+    yaxis_label = 'Prior'
     ax2.set_ylabel(yaxis_label, fontsize=pp['fontsize'], fontweight='bold', color=color_prior)
 
     if prior_range is None:

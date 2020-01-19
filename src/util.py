@@ -931,6 +931,10 @@ def round_int(n, mode='up', offset=0):
 
     return n_rounded
 
+def compute_mst_posterior(mcmc_res):
+
+    return
+
 
 def colorline(ax, x, y, z=None, cmap=plt.get_cmap('copper'), norm=plt.Normalize(0.0, 1.0), linewidth=3, alpha=1.0):
     """

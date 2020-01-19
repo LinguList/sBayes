@@ -2,7 +2,7 @@ if __name__ == '__main__':
     from src.util import load_from, samples2res, transform_weights_from_log,transform_p_from_log
     from src.preprocessing import compute_network, get_sites
     from src.plotting import plot_posterior_frequency, plot_trace_lh, plot_trace_recall_precision, \
-        plot_zone_size_over_time, plot_minimum_spanning_tree
+        plot_zone_size_over_time, plot_minimum_spanning_tree, plot_mst_posterior
     import itertools
     import os
 
@@ -22,12 +22,12 @@ if __name__ == '__main__':
 
     # Zone [3, 4, 6, 8]
     zones = [3, 4, 6, 8]
-    # zones = [3]
+    # zones = [6]
     zone = 3
 
     # Ease [0, 1, 2]
     eases = [0, 1, 2]
-    # eases = [0]
+    # eases = [1]
     ease = 0
 
     # Run [0]
@@ -35,7 +35,7 @@ if __name__ == '__main__':
     run = 0
 
     # general parameters
-    ts_posterior_freq = 0.8
+    ts_posterior_freq = 0.6
     ts_lower_freq = 0.5
     burn_in = 0.2
 
@@ -73,6 +73,20 @@ if __name__ == '__main__':
         sites, site_names = get_sites(f'{PATH_SIMULATION}data/sites_simulation.csv')
         network = compute_network(sites)
 
+        plot_mst_posterior(
+            mcmc_res,
+            sites,
+            ts_posterior_freq=ts_posterior_freq,
+            burn_in=burn_in,
+            show_zone_boundaries=True,
+            show_axes=False,
+            x_extend = (2510, 10000), # (1750, 10360)
+            y_extend = (700, 10000), # (400, 11950)
+            fname=f'{scenario_plot_path}mst_posterior_z{zone}_e{ease}_{run}'
+        )
+
+
+        """
         # Plot posterior frequency
         plot_posterior_frequency(
             mcmc_res,
@@ -108,6 +122,7 @@ if __name__ == '__main__':
             true_lh = True,
             fname = f'{scenario_plot_path}trace_likelihood_z{zone}_e{ease}_{run}'
         )
+        """
 
 
         plot_trace_recall_precision(

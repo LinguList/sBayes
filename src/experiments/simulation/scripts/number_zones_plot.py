@@ -1,9 +1,10 @@
 if __name__ == '__main__':
     from src.util import load_from, transform_weights_from_log, samples2res
     from src.preprocessing import get_sites, compute_network
+    from src.postprocessing import rank_zones
     from src.plotting import plot_trace_recall_precision, plot_trace_lh, \
         plot_posterior_frequency, plot_dics, plot_traces, plot_zone_size_over_time, \
-        plot_minimum_spanning_tree
+        plot_minimum_spanning_tree, plot_mst_posterior
 
     from src.postprocessing import match_zones, compute_dic
     import numpy as np
@@ -23,11 +24,11 @@ if __name__ == '__main__':
 
 
     run = 0
-    scenarios = [1, 2, 3, 4, 5, 6, 7]
-    # scenarios = [4] # fix for more than 4 zones
+    # scenarios = [1, 2, 3, 4, 5, 6, 7]
+    scenarios = [6] # fix for more than 4 zones
 
     # general parameters for plots
-    ts_posterior_freq = 0.8
+    ts_posterior_freq = 0.6
     ts_low_frequency = 0.5
     burn_in =  0.4
 
@@ -43,6 +44,10 @@ if __name__ == '__main__':
         samples = load_from(sample_path)
         mcmc_res = samples2res(samples)
 
+        # print(samples.keys())
+        # test, p_per_zone = rank_zones(mcmc_res, 'lh', burn_in)
+        # print(p_per_zone)
+
         zones = mcmc_res['zones']
         print(f'Number of zones: {len(zones)}')
         # print(type(mcmc_res['zones']))
@@ -52,8 +57,21 @@ if __name__ == '__main__':
         sites, site_names = get_sites(f'{PATH_SIMULATION}data/sites_simulation.csv')
         network = compute_network(sites)
 
+        plot_mst_posterior(
+            mcmc_res,
+            sites,
+            ts_posterior_freq=ts_posterior_freq,
+            burn_in=burn_in,
+            show_zone_boundaries=True,
+            show_axes=False,
+            x_extend = (2510, 10000), # (1750, 10360)
+            y_extend = (700, 10000), # (400, 11950)
+            fname=f'{scenario_plot_path}mst_posterior_nz{n_zones}_{run}'
+        )
 
-        
+
+
+        """
         # Plot posterior frequency
         plot_posterior_frequency(
             mcmc_res,
@@ -94,6 +112,9 @@ if __name__ == '__main__':
             burn_in=burn_in,
             fname=f'{scenario_plot_path}trace_recall_precision_nz{n_zones}_{run}'
         )
+        
+        """
+
         """
         # Plot zone size over time
         plot_zone_size_over_time(
@@ -107,7 +128,7 @@ if __name__ == '__main__':
 
 
 
-
+"""
 
 nz = 0
 dics = {}
@@ -187,3 +208,5 @@ plot_traces(
     list_precision,
     fname=f'{PLOT_PATH}traces_all_{run}'
 )
+
+"""

@@ -38,15 +38,12 @@ def get_sites(file, subset=False):
     with open(file, 'rU') as f:
         reader = csv.reader(f)
         for row in reader:
-            # don't add use rows if subset is turned on and they are not in the subset
-            use_row = False if subset and row[-1] == '0' else True
-            if use_row:
-                if columns:
-                    for i, value in enumerate(row):
-                        columns[i].append(value)
-                else:
-                    # first row
-                    columns = [[value] for value in row]
+            if columns:
+                for i, value in enumerate(row):
+                    columns[i].append(value)
+            else:
+                # first row
+                columns = [[value] for value in row]
     csv_as_dict = {c[0]: c[1:] for c in columns}
 
     try:
@@ -74,6 +71,9 @@ def get_sites(file, subset=False):
              'id': seq_id,
              'cz': [int(i) for i in cz],
              'names': name}
+
+    if subset:
+        sites['subset'] = [bool(int(i)) for i in csv_as_dict['subset']]
 
     site_names = {'external': name,
                   'internal': list(range(0, len(name)))}
